@@ -1,0 +1,144 @@
+Sub DescargarCorreosSeleccionados()
+    On Error GoTo ErrorHandler
+    
+    Dim olApp As Outlook.Application
+    Dim olSelection As Outlook.Selection
+    Dim olMail As Outlook.MailItem
+    Dim objItem As Object
+    Dim carpetaDestino As String
+    Dim contadorCorreos As Integer
+    Dim contadorAdjuntos As Integer
+    
+    ' Configurar carpeta de destino - CAMBIA ESTA RUTA
+    carpetaDestino = "C:\DescargasCorreos\"
+    
+    ' Verificar si hay correos seleccionados
+    Set olApp = Outlook.Application
+    Set olSelection = olApp.ActiveExplorer.Selection
+    
+    If olSelection.Count = 0 Then
+        MsgBox "Por favor, selecciona al menos un correo en Outlook.", vbInformation
+        Exit Sub
+    End If
+    
+    ' Crear carpeta si no existe
+    If Not FolderExists(carpetaDestino) Then
+        MkDir carpetaDestino
+    End If
+    
+    contadorCorreos = 0
+    contadorAdjuntos = 0
+    
+    ' Procesar cada correo seleccionado
+    For Each objItem In olSelection
+        If TypeOf objItem Is MailItem Then
+            Set olMail = objItem
+            
+            ' Descargar este correo
+            If DescargarUnCorreo(olMail, carpetaDestino) Then
+                contadorCorreos = contadorCorreos + 1
+                contadorAdjuntos = contadorAdjuntos + olMail.Attachments.Count
+            End If
+        End If
+    Next
+    
+    ' Mostrar resultados
+    MsgBox "Descarga completada exitosamente!" & vbCrLf & vbCrLf & _
+           "Correos procesados: " & contadorCorreos & vbCrLf & _
+           "Adjuntos descargados: " & contadorAdjuntos & vbCrLf & _
+           "Ubicación: " & carpetaDestino, vbInformation
+    
+    ' Abrir la carpeta de destino
+    Shell "explorer.exe """ & carpetaDestino & """", vbNormalFocus
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error en la descarga: " & Err.Description, vbCritical
+End Sub
+
+Function DescargarUnCorreo(olMail As Outlook.MailItem, carpetaBase As String) As Boolean
+    On Error GoTo ErrorHandler
+    
+    Dim nombreCarpeta As String
+    Dim carpetaCorreo As String
+    Dim adjunto As Outlook.Attachment
+    Dim i As Integer
+    
+    ' Crear nombre único para la carpeta del correo
+    nombreCarpeta = LimpiarNombre(olMail.Subject) & "_" & _
+                   Format(olMail.ReceivedTime, "yyyy-mm-dd_hh-nn-ss")
+    
+    ' Si el asunto está vacío, usar nombre genérico
+    If nombreCarpeta = "_" & Format(olMail.ReceivedTime, "yyyy-mm-dd_hh-nn-ss") Then
+        nombreCarpeta = "Correo_Sin_Asunto_" & Format(olMail.ReceivedTime, "yyyy-mm-dd_hh-nn-ss")
+    End If
+    
+    carpetaCorreo = carpetaBase & nombreCarpeta & "\"
+    
+    ' Crear carpeta para este correo
+    If Not FolderExists(carpetaCorreo) Then
+        MkDir carpetaCorreo
+    End If
+    
+    ' 1. Guardar el cuerpo del correo como texto
+    GuardarArchivoTexto carpetaCorreo & "cuerpo_correo.txt", _
+        "ASUNTO: " & olMail.Subject & vbCrLf & _
+        "DE: " & olMail.SenderName & " <" & olMail.SenderEmailAddress & ">" & vbCrLf & _
+        "PARA: " & olMail.To & vbCrLf & _
+        "FECHA: " & olMail.ReceivedTime & vbCrLf & _
+        "CC: " & olMail.CC & vbCrLf & vbCrLf & _
+        "CONTENIDO:" & vbCrLf & vbCrLf & olMail.Body
+    
+    ' 2. Guardar adjuntos
+    i = 1
+    For Each adjunto In olMail.Attachments
+        adjunto.SaveAsFile carpetaCorreo & Format(i, "00") & "_" & adjunto.DisplayName
+        i = i + 1
+    Next adjunto
+    
+    DescargarUnCorreo = True
+    Exit Function
+    
+ErrorHandler:
+    DescargarUnCorreo = False
+End Function
+
+Function LimpiarNombre(nombre As String) As String
+    Dim caracteresInvalidos As String
+    Dim i As Integer
+    Dim tempNombre As String
+    
+    ' Caracteres no permitidos en nombres de archivo
+    caracteresInvalidos = "\/:*?""<>|"
+    tempNombre = Trim(nombre)
+    
+    ' Reemplazar caracteres inválidos
+    For i = 1 To Len(caracteresInvalidos)
+        tempNombre = Replace(tempNombre, Mid(caracteresInvalidos, i, 1), "_")
+    Next i
+    
+    ' Reemplazar espacios múltiples y limitar longitud
+    tempNombre = Replace(tempNombre, "  ", " ")
+    If Len(tempNombre) > 50 Then
+        tempNombre = Left(tempNombre, 50)
+    End If
+    
+    LimpiarNombre = tempNombre
+End Function
+
+Function FolderExists(ruta As String) As Boolean
+    On Error Resume Next
+    FolderExists = (GetAttr(ruta) And vbDirectory) = vbDirectory
+End Function
+
+Sub GuardarArchivoTexto(rutaArchivo As String, contenido As String)
+    Dim fso As Object
+    Dim archivo As Object
+    
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set archivo = fso.CreateTextFile(rutaArchivo, True)
+    
+    archivo.Write contenido
+    archivo.Close
+End Sub
