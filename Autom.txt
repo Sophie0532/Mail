@@ -1,1 +1,149 @@
-\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\DODD FRANK\DAILY MARK\Phoenix\Analisis
+import pandas as pd
+import os
+import glob
+import sys
+from datetime import datetime
+
+def encontrar_archivo_daily_mark(ruta_base):
+    """
+    Encuentra el archivo DailyMark más reciente basado en el patrón de fecha
+    """
+    patron = os.path.join(ruta_base, "*_DailyMark.xlsx")
+    archivos = glob.glob(patron)
+    
+    if not archivos:
+        print("❌ No se encontraron archivos DailyMark con el patrón de fecha")
+        return None
+    
+    # Ordenar por fecha de modificación (más reciente primero)
+    archivo_mas_reciente = max(archivos, key=os.path.getmtime)
+    return archivo_mas_reciente
+
+def comparar_archivos():
+    # Ruta base
+    ruta_base = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\DODD FRANK\DAILY MARK\Phoenix\Analisis"
+    
+    try:
+        # Encontrar archivo DailyMark
+        archivo_daily_mark = encontrar_archivo_daily_mark(ruta_base)
+        if not archivo_daily_mark:
+            return
+        
+        archivo_phoenix = os.path.join(ruta_base, "DM_PHOENIX.csv")
+        
+        print("=" * 60)
+        print("COMPARACIÓN DE ARCHIVOS DAILY MARK")
+        print("=" * 60)
+        print(f"📁 Archivo DailyMark: {os.path.basename(archivo_daily_mark)}")
+        print(f"📁 Archivo Phoenix: DM_PHOENIX.csv")
+        print(f"📂 Ruta: {ruta_base}")
+        print("=" * 60)
+        
+        # Leer archivos
+        print("📖 Leyendo archivos...")
+        
+        # Leer Excel (DailyMark)
+        df_daily = pd.read_excel(archivo_daily_mark)
+        
+        # Leer CSV (Phoenix)
+        df_phoenix = pd.read_csv(archivo_phoenix)
+        
+        print("✅ Archivos leídos correctamente")
+        print()
+        
+        # 1. CONTEO DE FILAS TOTALES
+        print("1. 📊 CONTEO DE FILAS TOTALES")
+        print(f"   • DailyMark: {len(df_daily):,} filas")
+        print(f"   • Phoenix: {len(df_phoenix):,} filas")
+        print()
+        
+        # 2. MAPEO USI vs UTI
+        print("2. 🔄 MAPEO USI (DailyMark) vs UTI (Phoenix)")
+        
+        # Verificar que las columnas existen
+        if 'USI' not in df_daily.columns:
+            print("   ❌ Columna 'USI' no encontrada en DailyMark")
+        elif 'UTI' not in df_phoenix.columns:
+            print("   ❌ Columna 'UTI' no encontrada en Phoenix")
+        else:
+            # Convertir a sets para comparación
+            usi_daily = set(df_daily['USI'].dropna().astype(str))
+            uti_phoenix = set(df_phoenix['UTI'].dropna().astype(str))
+            
+            # Encontrar coincidencias y diferencias
+            coincidencias = usi_daily.intersection(uti_phoenix)
+            solo_en_daily = usi_daily - uti_phoenix
+            solo_en_phoenix = uti_phoenix - usi_daily
+            
+            print(f"   • Coincidencias: {len(coincidencias):,} valores")
+            print(f"   • Solo en DailyMark: {len(solo_en_daily):,} valores")
+            print(f"   • Solo en Phoenix: {len(solo_en_phoenix):,} valores")
+            
+            # Mostrar algunos ejemplos de diferencias (si existen)
+            if solo_en_daily:
+                print(f"   • Ejemplos solo en DailyMark: {list(solo_en_daily)[:5]}")
+            if solo_en_phoenix:
+                print(f"   • Ejemplos solo en Phoenix: {list(solo_en_phoenix)[:5]}")
+        print()
+        
+        # 3. TOTALIZAR VALORES CERO EN MTM
+        print("3. 🔢 VALORES CERO EN CAMPO MTM")
+        
+        def contar_ceros_y_vacios(df, nombre_archivo, columna_mtm='MTM'):
+            if columna_mtm not in df.columns:
+                print(f"   ❌ Columna '{columna_mtm}' no encontrada en {nombre_archivo}")
+                return 0, 0
+            
+            # Contar ceros
+            ceros = (df[columna_mtm] == 0).sum()
+            
+            # Contar vacíos (NaN o strings vacíos)
+            vacios = df[columna_mtm].isna().sum()
+            
+            # Si hay strings, contar también strings vacíos
+            if df[columna_mtm].dtype == 'object':
+                vacios += (df[columna_mtm].astype(str).str.strip() == '').sum()
+            
+            return ceros, vacios
+        
+        # DailyMark
+        ceros_daily, vacios_daily = contar_ceros_y_vacios(df_daily, "DailyMark")
+        print(f"   • DailyMark - Valores cero: {ceros_daily:,}")
+        print(f"   • DailyMark - Valores vacíos: {vacios_daily:,}")
+        
+        # Phoenix
+        ceros_phoenix, vacios_phoenix = contar_ceros_y_vacios(df_phoenix, "Phoenix")
+        print(f"   • Phoenix - Valores cero: {ceros_phoenix:,}")
+        print(f"   • Phoenix - Valores vacíos: {vacios_phoenix:,}")
+        print()
+        
+        # RESUMEN FINAL
+        print("=" * 60)
+        print("📈 RESUMEN FINAL")
+        print("=" * 60)
+        print(f"📊 Total filas:")
+        print(f"   • DailyMark: {len(df_daily):,}")
+        print(f"   • Phoenix: {len(df_phoenix):,}")
+        print(f"   • Diferencia: {abs(len(df_daily) - len(df_phoenix)):,}")
+        print()
+        print(f"🔄 Coincidencias USI/UTI: {len(coincidencias):,}")
+        print(f"📋 Valores cero MTM:")
+        print(f"   • DailyMark: {ceros_daily:,}")
+        print(f"   • Phoenix: {ceros_phoenix:,}")
+        print(f"📭 Valores vacíos MTM:")
+        print(f"   • DailyMark: {vacios_daily:,}")
+        print(f"   • Phoenix: {vacios_phoenix:,}")
+        print("=" * 60)
+        
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        print("💡 Posibles soluciones:")
+        print("   - Verifica que tengas acceso a la ruta de red")
+        print("   - Asegúrate de que los archivos existan")
+        print("   - Verifica que las columnas USI, UTI y MTM existan en ambos archivos")
+        input("Presiona Enter para salir...")
+
+if __name__ == "__main__":
+    comparar_archivos()
+    input("\nPresiona Enter para salir...")
+
