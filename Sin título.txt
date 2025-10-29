@@ -3,14 +3,14 @@ Sub DescargarCorreosSeleccionados()
     
     Dim olApp As Outlook.Application
     Dim olSelection As Outlook.Selection
-    Dim olMail As Outlook.MailItem
+    Dim olMail As Outlook.mailItem
     Dim objItem As Object
     Dim carpetaDestino As String
     Dim contadorCorreos As Integer
     Dim contadorAdjuntos As Integer
     
     ' Configurar carpeta de destino - CAMBIA ESTA RUTA
-    carpetaDestino = "C:\DescargasCorreos\"
+    carpetaDestino = "\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\DODD FRANK\DAILY MARK\Phoenix\Analisis\"
     
     ' Verificar si hay correos seleccionados
     Set olApp = Outlook.Application
@@ -31,7 +31,7 @@ Sub DescargarCorreosSeleccionados()
     
     ' Procesar cada correo seleccionado
     For Each objItem In olSelection
-        If TypeOf objItem Is MailItem Then
+        If TypeOf objItem Is mailItem Then
             Set olMail = objItem
             
             ' Descargar este correo
@@ -57,7 +57,7 @@ ErrorHandler:
     MsgBox "Error en la descarga: " & Err.Description, vbCritical
 End Sub
 
-Function DescargarUnCorreo(olMail As Outlook.MailItem, carpetaBase As String) As Boolean
+Function DescargarUnCorreo(olMail As Outlook.mailItem, carpetaBase As String) As Boolean
     On Error GoTo ErrorHandler
     
     Dim nombreCarpeta As String
@@ -88,7 +88,7 @@ Function DescargarUnCorreo(olMail As Outlook.MailItem, carpetaBase As String) As
         "PARA: " & olMail.To & vbCrLf & _
         "FECHA: " & olMail.ReceivedTime & vbCrLf & _
         "CC: " & olMail.CC & vbCrLf & vbCrLf & _
-        "CONTENIDO:" & vbCrLf & vbCrLf & olMail.Body
+        "CONTENIDO:" & vbCrLf & vbCrLf & olMail.body
     
     ' 2. Guardar adjuntos
     i = 1
@@ -142,3 +142,4 @@ Sub GuardarArchivoTexto(rutaArchivo As String, contenido As String)
     archivo.Write contenido
     archivo.Close
 End Sub
+
