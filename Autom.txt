@@ -21,7 +21,7 @@ def encontrar_archivo_daily_mark(ruta_base):
 
 def comparar_archivos():
     # Ruta base
-    ruta_base = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\DODD FRANK\DAILY MARK\Phoenix\Analisis"
+    ruta_base = r"\\w2sevi3.san.corp\Factory\REGULATORIO MERCADOS\DODD FRANK\DAILY MARK\Phoenix\Analisis"
     
     try:
         # Encontrar archivo DailyMark
@@ -29,13 +29,13 @@ def comparar_archivos():
         if not archivo_daily_mark:
             return
         
-        archivo_phoenix = os.path.join(ruta_base, "DM_PHOENIX.csv")
+        archivo_phoenix = os.path.join(ruta_base, "DW_PHOENIX.csv")
         
         print("=" * 60)
         print("COMPARACIÓN DE ARCHIVOS DAILY MARK")
         print("=" * 60)
         print(f"📁 Archivo DailyMark: {os.path.basename(archivo_daily_mark)}")
-        print(f"📁 Archivo Phoenix: DM_PHOENIX.csv")
+        print(f"📁 Archivo Phoenix: {os.path.basename(archivo_phoenix)}")
         print(f"📂 Ruta: {ruta_base}")
         print("=" * 60)
         
@@ -63,8 +63,14 @@ def comparar_archivos():
         # Verificar que las columnas existen
         if 'USI' not in df_daily.columns:
             print("   ❌ Columna 'USI' no encontrada en DailyMark")
+            coincidencias = set()
+            solo_en_daily = set()
+            solo_en_phoenix = set()
         elif 'UTI' not in df_phoenix.columns:
             print("   ❌ Columna 'UTI' no encontrada en Phoenix")
+            coincidencias = set()
+            solo_en_daily = set()
+            solo_en_phoenix = set()
         else:
             # Convertir a sets para comparación
             usi_daily = set(df_daily['USI'].dropna().astype(str))
@@ -146,4 +152,3 @@ def comparar_archivos():
 if __name__ == "__main__":
     comparar_archivos()
     input("\nPresiona Enter para salir...")
-
