@@ -19,9 +19,57 @@ def encontrar_archivo_daily_mark(ruta_base):
     archivo_mas_reciente = max(archivos, key=os.path.getmtime)
     return archivo_mas_reciente
 
+def leer_csv_con_errores(archivo_phoenix):
+    """
+    Lee el archivo CSV manejando posibles errores de formato
+    """
+    try:
+        # Primero intentamos leer normalmente
+        return pd.read_csv(archivo_phoenix)
+    except pd.errors.ParserError as e:
+        print(f"⚠️  Error al leer CSV: {e}")
+        print("🔧 Intentando métodos alternativos...")
+        
+        # Método 1: Especificar engine de Python
+        try:
+            print("   • Intentando con engine='python'...")
+            return pd.read_csv(archivo_phoenix, engine='python')
+        except:
+            pass
+        
+        # Método 2: Leer con diferentes delimitadores
+        try:
+            print("   • Probando diferentes delimitadores...")
+            for delimiter in [',', ';', '\t', '|']:
+                try:
+                    df = pd.read_csv(archivo_phoenix, delimiter=delimiter, engine='python')
+                    print(f"   ✅ CSV leído con delimitador: '{delimiter}'")
+                    return df
+                except:
+                    continue
+        except:
+            pass
+        
+        # Método 3: Leer sin encabezados y analizar estructura
+        try:
+            print("   • Analizando estructura del archivo...")
+            with open(archivo_phoenix, 'r', encoding='utf-8') as f:
+                lineas = f.readlines()
+            
+            print(f"   • El archivo tiene {len(lineas)} líneas")
+            print(f"   • Primera línea: {lineas[0][:100]}...")
+            print(f"   • Línea 104: {lineas[103] if len(lineas) > 103 else 'No existe'}")
+            
+            # Intentar leer saltando la línea problemática
+            print("   • Intentando leer saltando líneas problemáticas...")
+            return pd.read_csv(archivo_phoenix, error_bad_lines=False, warn_bad_lines=True, engine='python')
+        except Exception as e:
+            print(f"❌ No se pudo leer el archivo CSV: {e}")
+            raise
+
 def comparar_archivos():
     # Ruta base
-    ruta_base = r"\\w2sevi3.san.corp\Factory\REGULATORIO MERCADOS\DODD FRANK\DAILY MARK\Phoenix\Analisis"
+    ruta_base = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\DODD FRANK\DAILY MARK\Phoenix\Analisis"
     
     try:
         # Encontrar archivo DailyMark
@@ -29,7 +77,16 @@ def comparar_archivos():
         if not archivo_daily_mark:
             return
         
-        archivo_phoenix = os.path.join(ruta_base, "DW_PHOENIX.csv")
+        archivo_phoenix = os.path.join(ruta_base, "DMLPHOENIX.csv")
+        
+        # Verificar que los archivos existen
+        if not os.path.exists(archivo_daily_mark):
+            print(f"❌ No se encuentra el archivo: {archivo_daily_mark}")
+            return
+        
+        if not os.path.exists(archivo_phoenix):
+            print(f"❌ No se encuentra el archivo: {archivo_phoenix}")
+            return
         
         print("=" * 60)
         print("COMPARACIÓN DE ARCHIVOS DAILY MARK")
@@ -44,11 +101,16 @@ def comparar_archivos():
         
         # Leer Excel (DailyMark)
         df_daily = pd.read_excel(archivo_daily_mark)
+        print(f"✅ DailyMark leído: {len(df_daily)} filas, {len(df_daily.columns)} columnas")
         
-        # Leer CSV (Phoenix)
-        df_phoenix = pd.read_csv(archivo_phoenix)
+        # Leer CSV (Phoenix) con manejo de errores
+        df_phoenix = leer_csv_con_errores(archivo_phoenix)
+        print(f"✅ Phoenix leído: {len(df_phoenix)} filas, {len(df_phoenix.columns)} columnas")
         
-        print("✅ Archivos leídos correctamente")
+        # Mostrar información de las columnas
+        print("\n📊 COLUMNAS ENCONTRADAS:")
+        print(f"   • DailyMark: {list(df_daily.columns)}")
+        print(f"   • Phoenix: {list(df_phoenix.columns)}")
         print()
         
         # 1. CONTEO DE FILAS TOTALES
@@ -61,6 +123,12 @@ def comparar_archivos():
         print("2. 🔄 MAPEO USI (DailyMark) vs UTI (Phoenix)")
         
         # Verificar que las columnas existen
+        columnas_daily = df_daily.columns.tolist()
+        columnas_phoenix = df_phoenix.columns.tolist()
+        
+        print(f"   • Columnas en DailyMark: {columnas_daily}")
+        print(f"   • Columnas en Phoenix: {columnas_phoenix}")
+        
         if 'USI' not in df_daily.columns:
             print("   ❌ Columna 'USI' no encontrada en DailyMark")
             coincidencias = set()
@@ -87,9 +155,9 @@ def comparar_archivos():
             
             # Mostrar algunos ejemplos de diferencias (si existen)
             if solo_en_daily:
-                print(f"   • Ejemplos solo en DailyMark: {list(solo_en_daily)[:5]}")
+                print(f"   • Ejemplos solo en DailyMark: {list(solo_en_daily)[:3]}")
             if solo_en_phoenix:
-                print(f"   • Ejemplos solo en Phoenix: {list(solo_en_phoenix)[:5]}")
+                print(f"   • Ejemplos solo en Phoenix: {list(solo_en_phoenix)[:3]}")
         print()
         
         # 3. TOTALIZAR VALORES CERO EN MTM
@@ -146,7 +214,8 @@ def comparar_archivos():
         print("💡 Posibles soluciones:")
         print("   - Verifica que tengas acceso a la ruta de red")
         print("   - Asegúrate de que los archivos existan")
-        print("   - Verifica que las columnas USI, UTI y MTM existan en ambos archivos")
+        print("   - Verifica el formato del archivo CSV (puede tener comas adicionales)")
+        print("   - Abre el archivo CSV en un editor de texto y revisa la línea 104")
         input("Presiona Enter para salir...")
 
 if __name__ == "__main__":
