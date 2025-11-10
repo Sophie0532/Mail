@@ -277,3 +277,23 @@ Sub MarcarComoLeidosRapido()
 ErrorHandler:
     MsgBox "Error al marcar correos como leídos: " & Err.Description, vbCritical
 End Sub
+
+
+// En el editor de Power Query, ve a "Agregar columna" > "Columna condicional"
+= Table.AddColumn(
+    tu_tabla, 
+    "Mes_Nombre", 
+    each if [Mes] = 1 then "Enero"
+        else if [Mes] = 2 then "Febrero"
+        else if [Mes] = 3 then "Marzo"
+        else if [Mes] = 4 then "Abril"
+        else if [Mes] = 5 then "Mayo"
+        else if [Mes] = 6 then "Junio"
+        else if [Mes] = 7 then "Julio"
+        else if [Mes] = 8 then "Agosto"
+        else if [Mes] = 9 then "Septiembre"
+        else if [Mes] = 10 then "Octubre"
+        else if [Mes] = 11 then "Noviembre"
+        else if [Mes] = 12 then "Diciembre"
+        else "Mes inválido"
+)
