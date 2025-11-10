@@ -119,91 +119,80 @@ def comparar_archivos():
         print(f"   • Phoenix: {len(df_phoenix):,} filas")
         print()
         
-        # 2. ANÁLISIS DE VALORES NULL Y VACÍOS
-        print("2. 🔍 ANÁLISIS DE VALORES NULL Y VACÍOS")
+        # 2. ANÁLISIS DE VALORES NULL, VACÍOS Y CEROS
+        print("2. 🔍 ANÁLISIS DE VALORES NULL, VACÍOS Y CEROS")
         
-        def analizar_nulos_y_vacios(df, nombre_archivo, columna_id='USI'):
+        def analizar_valores_mtm(df, nombre_archivo, columna_id='USI'):
             """
-            Analiza valores nulos y vacíos en columnas importantes y muestra los IDs correspondientes
+            Analiza valores MTM: ceros, nulos y vacíos, y muestra los IDs correspondientes
             """
             print(f"   • {nombre_archivo}:")
             resultados = {}
             
-            # Columnas a analizar
-            columnas_analizar = ['USI', 'UTI', 'MTM', 'Counterparty', 'TradeDate', 'ProductType']
+            if 'MTM' not in df.columns:
+                print(f"     - MTM: ❌ Columna no encontrada")
+                return {
+                    'ceros': 0,
+                    'nulos': 0,
+                    'vacios': 0,
+                    'total_ceros': 0,
+                    'ids_ceros': [],
+                    'ids_vacios': []
+                }
             
-            for columna in columnas_analizar:
-                if columna in df.columns:
-                    # Contar nulos
-                    nulos = df[columna].isna().sum()
-                    
-                    # Contar strings vacíos (solo para columnas de texto)
-                    vacios = 0
-                    if df[columna].dtype == 'object':
-                        vacios = (df[columna].astype(str).str.strip() == '').sum()
-                    
-                    total_problemas = nulos + vacios
-                    
-                    # Obtener IDs con problemas
-                    ids_problemas = []
-                    if total_problemas > 0 and columna_id in df.columns:
-                        # IDs con valores nulos
-                        if nulos > 0:
-                            ids_nulos = df[df[columna].isna()][columna_id].dropna().astype(str).tolist()
-                            ids_problemas.extend(ids_nulos)
-                        
-                        # IDs con strings vacíos
-                        if vacios > 0:
-                            ids_vacios = df[df[columna].astype(str).str.strip() == ''][columna_id].dropna().astype(str).tolist()
-                            ids_problemas.extend(ids_vacios)
-                    
-                    resultados[columna] = {
-                        'nulos': nulos, 
-                        'vacios': vacios,
-                        'total_problemas': total_problemas,
-                        'ids_problemas': ids_problemas
-                    }
-                    
-                    if total_problemas > 0:
-                        print(f"     - {columna}: {total_problemas} problemas ({nulos} nulos, {vacios} vacíos)")
-                        if ids_problemas:
-                            print(f"       {columna_id}s afectados: {ids_problemas}")
-                    else:
-                        print(f"     - {columna}: 0 problemas")
-                else:
-                    print(f"     - {columna}: ❌ Columna no encontrada")
-                    resultados[columna] = {
-                        'nulos': 0, 
-                        'vacios': 0,
-                        'total_problemas': 0,
-                        'ids_problemas': []
-                    }
+            # Contar valores cero (0)
+            ceros = (df['MTM'] == 0).sum()
+            
+            # Contar valores nulos
+            nulos = df['MTM'].isna().sum()
+            
+            # Contar strings vacíos
+            vacios = 0
+            if df['MTM'].dtype == 'object':
+                vacios = (df['MTM'].astype(str).str.strip() == '').sum()
+            
+            # Obtener IDs con valores cero
+            ids_ceros = []
+            if ceros > 0 and columna_id in df.columns:
+                ids_ceros = df[df['MTM'] == 0][columna_id].dropna().astype(str).tolist()
+            
+            # Obtener IDs con valores vacíos/nulos
+            ids_vacios = []
+            if (nulos + vacios) > 0 and columna_id in df.columns:
+                # IDs con valores nulos
+                if nulos > 0:
+                    ids_nulos = df[df['MTM'].isna()][columna_id].dropna().astype(str).tolist()
+                    ids_vacios.extend(ids_nulos)
+                
+                # IDs con strings vacíos
+                if vacios > 0:
+                    ids_str_vacios = df[df['MTM'].astype(str).str.strip() == ''][columna_id].dropna().astype(str).tolist()
+                    ids_vacios.extend(ids_str_vacios)
+            
+            resultados = {
+                'ceros': ceros,
+                'nulos': nulos,
+                'vacios': vacios,
+                'total_ceros': ceros,
+                'total_vacios': nulos + vacios,
+                'ids_ceros': ids_ceros,
+                'ids_vacios': ids_vacios
+            }
+            
+            print(f"     - MTM - Valores cero: {ceros}")
+            print(f"     - MTM - Valores nulos: {nulos}")
+            print(f"     - MTM - Valores vacíos: {vacios}")
             
             return resultados
         
         # Analizar DailyMark
         print("\n   📋 DailyMark:")
-        resultados_daily = analizar_nulos_y_vacios(df_daily, "DailyMark", 'USI')
+        resultados_mtm_daily = analizar_valores_mtm(df_daily, "DailyMark", 'USI')
         
         # Analizar Phoenix
         print("\n   📋 Phoenix:")
-        resultados_phoenix = analizar_nulos_y_vacios(df_phoenix, "Phoenix", 'UTI')
+        resultados_mtm_phoenix = analizar_valores_mtm(df_phoenix, "Phoenix", 'UTI')
         print()
-        
-        # Obtener USI/UTI para valores vacíos MTM
-        def obtener_ids_mtm_vacios(df, columna_mtm='MTM', columna_id='USI'):
-            """Obtiene los IDs correspondientes a valores MTM vacíos"""
-            if columna_mtm not in df.columns or columna_id not in df.columns:
-                return []
-            
-            # Filtrar filas donde MTM está vacío o es nulo
-            mask = (df[columna_mtm].isna()) | (df[columna_mtm].astype(str).str.strip() == '')
-            ids_vacios = df[mask][columna_id].dropna().astype(str).tolist()
-            return ids_vacios
-        
-        # Obtener USI/UTI para MTM vacíos
-        usi_mtm_vacios_daily = obtener_ids_mtm_vacios(df_daily, 'MTM', 'USI')
-        uti_mtm_vacios_phoenix = obtener_ids_mtm_vacios(df_phoenix, 'MTM', 'UTI')
         
         # RESUMEN FINAL
         print("=" * 60)
@@ -214,23 +203,19 @@ def comparar_archivos():
         print(f"   • Phoenix: {len(df_phoenix):,}")
         print()
         
-        # Mostrar valores cero y vacíos MTM
-        mtm_cero_daily = resultados_daily.get('MTM', {}).get('nulos', 0) + resultados_daily.get('MTM', {}).get('vacios', 0)
-        mtm_cero_phoenix = resultados_phoenix.get('MTM', {}).get('nulos', 0) + resultados_phoenix.get('MTM', {}).get('vacios', 0)
-        
         print(f"🔍 VALORES CERO EN CAMPO MTM:")
-        print(f"   • DailyMark - Valores cero: {mtm_cero_daily}")
-        print(f"   • Phoenix - Valores cero: {mtm_cero_phoenix}")
+        print(f"   • DailyMark - Valores cero: {resultados_mtm_daily['total_ceros']}")
+        print(f"   • Phoenix - Valores cero: {resultados_mtm_phoenix['total_ceros']}")
         print()
         
         print(f"📝 VALORES VACÍOS MTM:")
-        print(f"   • DailyMark - Valores vacíos: {len(usi_mtm_vacios_daily)}")
-        if usi_mtm_vacios_daily:
-            print(f"     USIs correspondientes: {usi_mtm_vacios_daily}")
+        print(f"   • DailyMark - Valores vacíos: {resultados_mtm_daily['total_vacios']}")
+        if resultados_mtm_daily['ids_vacios']:
+            print(f"     USIs correspondientes: {resultados_mtm_daily['ids_vacios']}")
         
-        print(f"   • Phoenix - Valores vacíos: {len(uti_mtm_vacios_phoenix)}")
-        if uti_mtm_vacios_phoenix:
-            print(f"     UTIs correspondientes: {uti_mtm_vacios_phoenix}")
+        print(f"   • Phoenix - Valores vacíos: {resultados_mtm_phoenix['total_vacios']}")
+        if resultados_mtm_phoenix['ids_vacios']:
+            print(f"     UTIs correspondientes: {resultados_mtm_phoenix['ids_vacios']}")
         
         print("=" * 60)
         
