@@ -77,7 +77,7 @@ def comparar_archivos():
         if not archivo_daily_mark:
             return
         
-        archivo_phoenix = os.path.join(ruta_base, "DMLPHOENIX.csv")
+        archivo_phoenix = os.path.join(ruta_base, "DM_PHOENIX.csv")
         
         # Verificar que los archivos existen
         if not os.path.exists(archivo_daily_mark):
