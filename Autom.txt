@@ -119,88 +119,91 @@ def comparar_archivos():
         print(f"   • Phoenix: {len(df_phoenix):,} filas")
         print()
         
-        # 2. MAPEO USI vs UTI
-        print("2. 🔄 MAPEO USI (DailyMark) vs UTI (Phoenix)")
+        # 2. ANÁLISIS DE VALORES NULL Y VACÍOS
+        print("2. 🔍 ANÁLISIS DE VALORES NULL Y VACÍOS")
         
-        # Verificar que las columnas existen
-        columnas_daily = df_daily.columns.tolist()
-        columnas_phoenix = df_phoenix.columns.tolist()
+        def analizar_nulos_y_vacios(df, nombre_archivo, columna_id='USI'):
+            """
+            Analiza valores nulos y vacíos en columnas importantes y muestra los IDs correspondientes
+            """
+            print(f"   • {nombre_archivo}:")
+            resultados = {}
+            
+            # Columnas a analizar
+            columnas_analizar = ['USI', 'UTI', 'MTM', 'Counterparty', 'TradeDate', 'ProductType']
+            
+            for columna in columnas_analizar:
+                if columna in df.columns:
+                    # Contar nulos
+                    nulos = df[columna].isna().sum()
+                    
+                    # Contar strings vacíos (solo para columnas de texto)
+                    vacios = 0
+                    if df[columna].dtype == 'object':
+                        vacios = (df[columna].astype(str).str.strip() == '').sum()
+                    
+                    total_problemas = nulos + vacios
+                    
+                    # Obtener IDs con problemas
+                    ids_problemas = []
+                    if total_problemas > 0 and columna_id in df.columns:
+                        # IDs con valores nulos
+                        if nulos > 0:
+                            ids_nulos = df[df[columna].isna()][columna_id].dropna().astype(str).tolist()
+                            ids_problemas.extend(ids_nulos)
+                        
+                        # IDs con strings vacíos
+                        if vacios > 0:
+                            ids_vacios = df[df[columna].astype(str).str.strip() == ''][columna_id].dropna().astype(str).tolist()
+                            ids_problemas.extend(ids_vacios)
+                    
+                    resultados[columna] = {
+                        'nulos': nulos, 
+                        'vacios': vacios,
+                        'total_problemas': total_problemas,
+                        'ids_problemas': ids_problemas
+                    }
+                    
+                    if total_problemas > 0:
+                        print(f"     - {columna}: {total_problemas} problemas ({nulos} nulos, {vacios} vacíos)")
+                        if ids_problemas:
+                            print(f"       {columna_id}s afectados: {ids_problemas}")
+                    else:
+                        print(f"     - {columna}: 0 problemas")
+                else:
+                    print(f"     - {columna}: ❌ Columna no encontrada")
+                    resultados[columna] = {
+                        'nulos': 0, 
+                        'vacios': 0,
+                        'total_problemas': 0,
+                        'ids_problemas': []
+                    }
+            
+            return resultados
         
-        print(f"   • Columnas en DailyMark: {columnas_daily}")
-        print(f"   • Columnas en Phoenix: {columnas_phoenix}")
+        # Analizar DailyMark
+        print("\n   📋 DailyMark:")
+        resultados_daily = analizar_nulos_y_vacios(df_daily, "DailyMark", 'USI')
         
-        if 'USI' not in df_daily.columns:
-            print("   ❌ Columna 'USI' no encontrada en DailyMark")
-            coincidencias = set()
-            solo_en_daily = set()
-            solo_en_phoenix = set()
-        elif 'UTI' not in df_phoenix.columns:
-            print("   ❌ Columna 'UTI' no encontrada en Phoenix")
-            coincidencias = set()
-            solo_en_daily = set()
-            solo_en_phoenix = set()
-        else:
-            # Convertir a sets para comparación
-            usi_daily = set(df_daily['USI'].dropna().astype(str))
-            uti_phoenix = set(df_phoenix['UTI'].dropna().astype(str))
-            
-            # Encontrar coincidencias y diferencias
-            coincidencias = usi_daily.intersection(uti_phoenix)
-            solo_en_daily = usi_daily - uti_phoenix
-            solo_en_phoenix = uti_phoenix - usi_daily
-            
-            print(f"   • Coincidencias: {len(coincidencias):,} valores")
-            print(f"   • Solo en DailyMark: {len(solo_en_daily):,} valores")
-            print(f"   • Solo en Phoenix: {len(solo_en_phoenix):,} valores")
-            
-            # NUEVA SECCIÓN: Mostrar valores exactos no coincidentes
-            print("\n🔍 VALORES NO COINCIDENTES DETALLADOS:")
-            if solo_en_daily:
-                print(f"   • Solo en DailyMark ({len(solo_en_daily)}): {list(solo_en_daily)}")
-            else:
-                print(f"   • Solo en DailyMark: 0 valores")
-            if solo_en_phoenix:
-                print(f"   • Solo en Phoenix ({len(solo_en_phoenix)}): {list(solo_en_phoenix)}")
-            else:
-                print(f"   • Solo en Phoenix: 0 valores")
-            
-            # Mostrar algunos ejemplos de diferencias (si existen)
-            if solo_en_daily:
-                print(f"   • Ejemplos solo en DailyMark: {list(solo_en_daily)[:5]}")
-            if solo_en_phoenix:
-                print(f"   • Ejemplos solo en Phoenix: {list(solo_en_phoenix)[:5]}")
+        # Analizar Phoenix
+        print("\n   📋 Phoenix:")
+        resultados_phoenix = analizar_nulos_y_vacios(df_phoenix, "Phoenix", 'UTI')
         print()
         
-        # 3. TOTALIZAR VALORES CERO EN MTM
-        print("3. 🔢 VALORES CERO EN CAMPO MTM")
+        # Obtener USI/UTI para valores vacíos MTM
+        def obtener_ids_mtm_vacios(df, columna_mtm='MTM', columna_id='USI'):
+            """Obtiene los IDs correspondientes a valores MTM vacíos"""
+            if columna_mtm not in df.columns or columna_id not in df.columns:
+                return []
+            
+            # Filtrar filas donde MTM está vacío o es nulo
+            mask = (df[columna_mtm].isna()) | (df[columna_mtm].astype(str).str.strip() == '')
+            ids_vacios = df[mask][columna_id].dropna().astype(str).tolist()
+            return ids_vacios
         
-        def contar_ceros_y_vacios(df, nombre_archivo, columna_mtm='MTM'):
-            if columna_mtm not in df.columns:
-                print(f"   ❌ Columna '{columna_mtm}' no encontrada en {nombre_archivo}")
-                return 0, 0
-            
-            # Contar ceros
-            ceros = (df[columna_mtm] == 0).sum()
-            
-            # Contar vacíos (NaN o strings vacíos)
-            vacios = df[columna_mtm].isna().sum()
-            
-            # Si hay strings, contar también strings vacíos
-            if df[columna_mtm].dtype == 'object':
-                vacios += (df[columna_mtm].astype(str).str.strip() == '').sum()
-            
-            return ceros, vacios
-        
-        # DailyMark
-        ceros_daily, vacios_daily = contar_ceros_y_vacios(df_daily, "DailyMark")
-        print(f"   • DailyMark - Valores cero: {ceros_daily:,}")
-        print(f"   • DailyMark - Valores vacíos: {vacios_daily:,}")
-        
-        # Phoenix
-        ceros_phoenix, vacios_phoenix = contar_ceros_y_vacios(df_phoenix, "Phoenix")
-        print(f"   • Phoenix - Valores cero: {ceros_phoenix:,}")
-        print(f"   • Phoenix - Valores vacíos: {vacios_phoenix:,}")
-        print()
+        # Obtener USI/UTI para MTM vacíos
+        usi_mtm_vacios_daily = obtener_ids_mtm_vacios(df_daily, 'MTM', 'USI')
+        uti_mtm_vacios_phoenix = obtener_ids_mtm_vacios(df_phoenix, 'MTM', 'UTI')
         
         # RESUMEN FINAL
         print("=" * 60)
@@ -209,15 +212,26 @@ def comparar_archivos():
         print(f"📊 Total filas:")
         print(f"   • DailyMark: {len(df_daily):,}")
         print(f"   • Phoenix: {len(df_phoenix):,}")
-        print(f"   • Diferencia: {abs(len(df_daily) - len(df_phoenix)):,}")
         print()
-        print(f"🔄 Coincidencias USI/UTI: {len(coincidencias):,}")
-        print(f"📋 Valores cero MTM:")
-        print(f"   • DailyMark: {ceros_daily:,}")
-        print(f"   • Phoenix: {ceros_phoenix:,}")
-        print(f"📭 Valores vacíos MTM:")
-        print(f"   • DailyMark: {vacios_daily:,}")
-        print(f"   • Phoenix: {vacios_phoenix:,}")
+        
+        # Mostrar valores cero y vacíos MTM
+        mtm_cero_daily = resultados_daily.get('MTM', {}).get('nulos', 0) + resultados_daily.get('MTM', {}).get('vacios', 0)
+        mtm_cero_phoenix = resultados_phoenix.get('MTM', {}).get('nulos', 0) + resultados_phoenix.get('MTM', {}).get('vacios', 0)
+        
+        print(f"🔍 VALORES CERO EN CAMPO MTM:")
+        print(f"   • DailyMark - Valores cero: {mtm_cero_daily}")
+        print(f"   • Phoenix - Valores cero: {mtm_cero_phoenix}")
+        print()
+        
+        print(f"📝 VALORES VACÍOS MTM:")
+        print(f"   • DailyMark - Valores vacíos: {len(usi_mtm_vacios_daily)}")
+        if usi_mtm_vacios_daily:
+            print(f"     USIs correspondientes: {usi_mtm_vacios_daily}")
+        
+        print(f"   • Phoenix - Valores vacíos: {len(uti_mtm_vacios_phoenix)}")
+        if uti_mtm_vacios_phoenix:
+            print(f"     UTIs correspondientes: {uti_mtm_vacios_phoenix}")
+        
         print("=" * 60)
         
     except Exception as e:
@@ -226,7 +240,6 @@ def comparar_archivos():
         print("   - Verifica que tengas acceso a la ruta de red")
         print("   - Asegúrate de que los archivos existan")
         print("   - Verifica el formato del archivo CSV (puede tener comas adicionales)")
-        print("   - Abre el archivo CSV en un editor de texto y revisa la línea 104")
         input("Presiona Enter para salir...")
 
 if __name__ == "__main__":
