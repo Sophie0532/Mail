@@ -119,110 +119,112 @@ def comparar_archivos():
         print(f"   • Phoenix: {len(df_phoenix):,} filas")
         print()
         
-        # 2. VALORES CERO Y VACÍOS EN MTM/NTN
-        print("2. 🔢 VALORES CERO Y VACÍOS EN CAMPO MTM/NTN")
+        # 2. ANÁLISIS DE VALORES NULL Y VACÍOS
+        print("2. 🔍 ANÁLISIS DE VALORES NULL Y VACÍOS")
         
-        def analizar_valores_mtm(df, nombre_archivo, columna_mtm='MTM', columna_id='USI'):
+        def analizar_nulos_y_vacios(df, nombre_archivo, columna_id='USI'):
             """
-            Analiza valores cero, vacíos y muestra los IDs correspondientes
-            """
-            if columna_mtm not in df.columns:
-                print(f"   ❌ Columna '{columna_mtm}' no encontrada en {nombre_archivo}")
-                return 0, 0, [], []
-            
-            # Contar ceros
-            ceros = (df[columna_mtm] == 0).sum()
-            
-            # Contar vacíos (NaN o strings vacíos)
-            vacios = df[columna_mtm].isna().sum()
-            
-            # Obtener IDs con valores cero
-            ids_ceros = []
-            if columna_id in df.columns and ceros > 0:
-                ids_ceros = df[df[columna_mtm] == 0][columna_id].dropna().astype(str).tolist()
-            
-            # Obtener IDs con valores vacíos
-            ids_vacios = []
-            if columna_id in df.columns and vacios > 0:
-                ids_vacios = df[df[columna_mtm].isna()][columna_id].dropna().astype(str).tolist()
-            
-            return ceros, vacios, ids_ceros, ids_vacios
-        
-        # DailyMark
-        ceros_daily, vacios_daily, ids_ceros_daily, ids_vacios_daily = analizar_valores_mtm(df_daily, "DailyMark")
-        print(f"   • DailyMark - Valores cero: {ceros_daily:,}")
-        if ids_ceros_daily:
-            print(f"     USIs con valor cero: {ids_ceros_daily}")
-        
-        print(f"   • DailyMark - Valores vacíos: {vacios_daily:,}")
-        if ids_vacios_daily:
-            print(f"     USIs con valor vacío: {ids_vacios_daily}")
-        
-        # Phoenix
-        ceros_phoenix, vacios_phoenix, ids_ceros_phoenix, ids_vacios_phoenix = analizar_valores_mtm(df_phoenix, "Phoenix", columna_id='UTI')
-        print(f"   • Phoenix - Valores cero: {ceros_phoenix:,}")
-        if ids_ceros_phoenix:
-            print(f"     UTIs con valor cero: {ids_ceros_phoenix}")
-        
-        print(f"   • Phoenix - Valores vacíos: {vacios_phoenix:,}")
-        if ids_vacios_phoenix:
-            print(f"     UTIs con valor vacío: {ids_vacios_phoenix}")
-        print()
-        
-        # 3. ANÁLISIS DE VALORES NULL EN OTRAS COLUMNAS IMPORTANTES
-        print("3. 🔍 ANÁLISIS DE VALORES NULL EN COLUMNAS CLAVE")
-        
-        def analizar_nulos_por_columna(df, nombre_archivo, columnas_analizar, columna_id):
-            """
-            Analiza valores nulos en columnas específicas y muestra los IDs correspondientes
+            Analiza valores nulos y vacíos en columnas importantes y muestra los IDs correspondientes
             """
             print(f"   • {nombre_archivo}:")
+            resultados = {}
+            
+            # Columnas a analizar
+            columnas_analizar = ['USI', 'UTI', 'MTM', 'Counterparty', 'TradeDate', 'ProductType']
             
             for columna in columnas_analizar:
                 if columna in df.columns:
+                    # Contar nulos
                     nulos = df[columna].isna().sum()
-                    if nulos > 0:
-                        ids_nulos = df[df[columna].isna()][columna_id].dropna().astype(str).tolist()
-                        print(f"     - {columna}: {nulos:,} nulos")
-                        if ids_nulos:
-                            print(f"       {columna_id}s con valor null: {ids_nulos}")
+                    
+                    # Contar strings vacíos (solo para columnas de texto)
+                    vacios = 0
+                    if df[columna].dtype == 'object':
+                        vacios = (df[columna].astype(str).str.strip() == '').sum()
+                    
+                    total_problemas = nulos + vacios
+                    
+                    # Obtener IDs con problemas
+                    ids_problemas = []
+                    if total_problemas > 0 and columna_id in df.columns:
+                        # IDs con valores nulos
+                        if nulos > 0:
+                            ids_nulos = df[df[columna].isna()][columna_id].dropna().astype(str).tolist()
+                            ids_problemas.extend(ids_nulos)
+                        
+                        # IDs con strings vacíos
+                        if vacios > 0:
+                            ids_vacios = df[df[columna].astype(str).str.strip() == ''][columna_id].dropna().astype(str).tolist()
+                            ids_problemas.extend(ids_vacios)
+                    
+                    resultados[columna] = {
+                        'nulos': nulos, 
+                        'vacios': vacios,
+                        'total_problemas': total_problemas,
+                        'ids_problemas': ids_problemas
+                    }
+                    
+                    if total_problemas > 0:
+                        print(f"     - {columna}: {total_problemas} problemas ({nulos} nulos, {vacios} vacíos)")
+                        if ids_problemas:
+                            print(f"       {columna_id}s afectados: {ids_problemas}")
                     else:
-                        print(f"     - {columna}: 0 nulos")
+                        print(f"     - {columna}: 0 problemas")
                 else:
                     print(f"     - {columna}: ❌ Columna no encontrada")
-        
-        # Columnas a analizar (puedes ajustar estas según tus necesidades)
-        columnas_analizar = ['USI', 'UTI', 'MTM', 'Counterparty', 'TradeDate', 'ProductType']
+                    resultados[columna] = {
+                        'nulos': 0, 
+                        'vacios': 0,
+                        'total_problemas': 0,
+                        'ids_problemas': []
+                    }
+            
+            return resultados
         
         # Analizar DailyMark
-        if 'USI' in df_daily.columns:
-            analizar_nulos_por_columna(df_daily, "DailyMark", columnas_analizar, 'USI')
-        else:
-            print("   • DailyMark: ❌ Columna USI no encontrada para análisis")
+        print("\n   📋 DailyMark:")
+        resultados_daily = analizar_nulos_y_vacios(df_daily, "DailyMark", 'USI')
         
         # Analizar Phoenix
-        if 'UTI' in df_phoenix.columns:
-            analizar_nulos_por_columna(df_phoenix, "Phoenix", columnas_analizar, 'UTI')
-        else:
-            print("   • Phoenix: ❌ Columna UTI no encontrada para análisis")
+        print("\n   📋 Phoenix:")
+        resultados_phoenix = analizar_nulos_y_vacios(df_phoenix, "Phoenix", 'UTI')
         print()
         
         # RESUMEN FINAL
         print("=" * 60)
-        print("📈 RESUMEN FINAL")
+        print("📈 RESUMEN FINAL - VALORES NULL Y VACÍOS")
         print("=" * 60)
         print(f"📊 Total filas:")
         print(f"   • DailyMark: {len(df_daily):,}")
         print(f"   • Phoenix: {len(df_phoenix):,}")
-        print(f"   • Diferencia: {abs(len(df_daily) - len(df_phoenix)):,}")
         print()
-        print(f"📋 Valores cero MTM/NTN:")
-        print(f"   • DailyMark: {ceros_daily:,}")
-        print(f"   • Phoenix: {ceros_phoenix:,}")
-        print()
-        print(f"📭 Valores vacíos MTM/NTN:")
-        print(f"   • DailyMark: {vacios_daily:,}")
-        print(f"   • Phoenix: {vacios_phoenix:,}")
+        
+        print(f"🔍 PROBLEMAS ENCONTRADOS:")
+        
+        # Resumen de problemas en DailyMark
+        total_problemas_daily = sum(resultado['total_problemas'] for resultado in resultados_daily.values())
+        if total_problemas_daily > 0:
+            print(f"   • DailyMark - Total problemas: {total_problemas_daily}")
+            for columna, datos in resultados_daily.items():
+                if datos['total_problemas'] > 0:
+                    print(f"     - {columna}: {datos['total_problemas']} problemas")
+                    if datos['ids_problemas']:
+                        print(f"       USIs afectados: {datos['ids_problemas']}")
+        else:
+            print(f"   • DailyMark: ✅ Sin problemas encontrados")
+        
+        # Resumen de problemas en Phoenix
+        total_problemas_phoenix = sum(resultado['total_problemas'] for resultado in resultados_phoenix.values())
+        if total_problemas_phoenix > 0:
+            print(f"   • Phoenix - Total problemas: {total_problemas_phoenix}")
+            for columna, datos in resultados_phoenix.items():
+                if datos['total_problemas'] > 0:
+                    print(f"     - {columna}: {datos['total_problemas']} problemas")
+                    if datos['ids_problemas']:
+                        print(f"       UTIs afectados: {datos['ids_problemas']}")
+        else:
+            print(f"   • Phoenix: ✅ Sin problemas encontrados")
+        
         print("=" * 60)
         
     except Exception as e:
