@@ -1,51 +1,192 @@
 import os
 import pandas as pd
 import gzip
+import csv
+from io import StringIO
 
-def procesar_cftc_especifico():
+def procesar_archivos_cftc_corregido():
     ruta_base = r"X:\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre"
+    
+    patrones = [
+        "CFTC_IR_SubmissionReport_*-en-6STB.csv.gz",
+        "CFTC_FX_SubmissionReport_*-en-5STB.csv.gz", 
+        "CFTC_EQ_SubmissionReport_*-en-4STB.csv.gz",
+        "CFTC_CR_SubmissionReport_*-en-3STB.csv.gz"
+    ]
     
     todos_datos = []
     
-    # Para cada día del mes
     for dia in range(1, 32):
-        carpeta = f"{dia:02d}.10"
-        ruta_completa = os.path.join(ruta_base, carpeta)
+        carpeta_dia = f"{dia:02d}.10"
+        ruta_carpeta = os.path.join(ruta_base, carpeta_dia)
         
-        if os.path.exists(ruta_completa):
-            print(f"Revisando {carpeta}...")
+        if not os.path.exists(ruta_carpeta):
+            continue
             
-            # Listar todos los archivos en la carpeta
-            for archivo in os.listdir(ruta_completa):
-                ruta_archivo = os.path.join(ruta_completa, archivo)
+        print(f"Procesando: {carpeta_dia}")
+        
+        for patron in patrones:
+            import glob
+            ruta_patron = os.path.join(ruta_carpeta, patron)
+            archivos = glob.glob(ruta_patron)
+            
+            for archivo in archivos:
+                print(f"  → {os.path.basename(archivo)}")
                 
-                # Verificar patrones específicos
-                if (archivo.startswith("CFTC_IR_SubmissionReport_") and archivo.endswith("-en-6STB.csv.gz") or
-                    archivo.startswith("CFTC_FX_SubmissionReport_") and archivo.endswith("-en-5STB.csv.gz") or
-                    archivo.startswith("CFTC_EQ_SubmissionReport_") and archivo.endswith("-en-4STB.csv.gz") or
-                    archivo.startswith("CFTC_CR_SubmissionReport_") and archivo.endswith("-en-3STB.csv.gz")):
+                try:
+                    # ENFOQUE 1: Leer como texto y analizar manualmente
+                    with gzip.open(archivo, 'rt', encoding='utf-8') as f:
+                        contenido = f.read()
                     
-                    print(f"  → Encontrado: {archivo}")
+                    # Dividir en líneas y procesar
+                    lineas = contenido.strip().split('\n')
+                    
+                    # Buscar encabezados válidos (líneas con múltiples campos)
+                    datos_procesados = []
+                    for linea in lineas:
+                        # Intentar detectar el delimitador
+                        if ';' in linea and linea.count(';') > 1:
+                            campos = linea.split(';')
+                        elif ',' in linea and linea.count(',') > 1:
+                            campos = linea.split(',')
+                        elif '|' in linea and linea.count('|') > 1:
+                            campos = linea.split('|')
+                        else:
+                            campos = [linea]
+                        
+                        # Solo agregar líneas que tengan múltiples campos
+                        if len(campos) > 1:
+                            datos_procesados.append(campos)
+                    
+                    if len(datos_procesados) > 1:
+                        # Crear DataFrame
+                        df = pd.DataFrame(datos_procesados[1:], columns=datos_procesados[0])
+                        df['Archivo_Origen'] = os.path.basename(archivo)
+                        df['Fecha_Dia'] = f"2025-10-{dia:02d}"
+                        todos_datos.append(df)
+                        print(f"    ✓ Procesado: {len(df)} registros")
+                    else:
+                        print(f"    ⚠ No hay datos válidos en {archivo}")
+                        
+                except Exception as e:
+                    print(f"    ✗ Error: {str(e)[:100]}...")
+                    # Intentar enfoque alternativo
+                    try:
+                        df = procesar_con_pandas_directo(archivo)
+                        if df is not None:
+                            df['Archivo_Origen'] = os.path.basename(archivo)
+                            df['Fecha_Dia'] = f"2025-10-{dia:02d}"
+                            todos_datos.append(df)
+                            print(f"    ✓ Recuperado con método alternativo: {len(df)} registros")
+                    except:
+                        print(f"    ✗ Método alternativo también falló")
+    
+    # Guardar resultados
+    if todos_datos:
+        df_combinado = pd.concat(todos_datos, ignore_index=True)
+        nombre_excel = "CFTC_Combined_Corregido.xlsx"
+        
+        with pd.ExcelWriter(nombre_excel, engine='openpyxl') as writer:
+            df_combinado.to_excel(writer, sheet_name='Datos_Combinados', index=False)
+            
+            # Crear hoja de resumen
+            resumen = pd.DataFrame({
+                'Total_Archivos': [len(todos_datos)],
+                'Total_Registros': [len(df_combinado)],
+                'Columnas': [', '.join(df_combinado.columns)]
+            })
+            resumen.to_excel(writer, sheet_name='Resumen', index=False)
+        
+        print(f"\n✅ PROCESO COMPLETADO")
+        print(f"📊 Archivos procesados: {len(todos_datos)}")
+        print(f"📈 Registros totales: {len(df_combinado)}")
+        print(f"💾 Guardado como: {nombre_excel}")
+        
+        return df_combinado
+    else:
+        print("❌ No se pudieron procesar archivos")
+        return None
+
+def procesar_con_pandas_directo(archivo):
+    """Enfoque alternativo para leer archivos problemáticos"""
+    try:
+        # Probar diferentes delimitadores
+        for delimiter in [',', ';', '|', '\t']:
+            try:
+                with gzip.open(archivo, 'rt', encoding='utf-8') as f:
+                    # Leer primeras líneas para diagnóstico
+                    lineas = [f.readline() for _ in range(5)]
+                    f.seek(0)  # Volver al inicio
+                    
+                    df = pd.read_csv(f, delimiter=delimiter, engine='python', 
+                                   quoting=csv.QUOTE_MINIMAL, on_bad_lines='skip')
+                    
+                    if len(df.columns) > 1 and len(df) > 0:
+                        return df
+            except:
+                continue
+        
+        # Último intento: leer todo como texto
+        with gzip.open(archivo, 'rt', encoding='utf-8') as f:
+            contenido = f.read()
+        
+        # Buscar patrones de datos
+        lineas = contenido.split('\n')
+        datos = []
+        for linea in lineas:
+            if any(x in linea for x in [',', ';', '|']) and len(linea) > 10:
+                datos.append(linea)
+        
+        if datos:
+            # Crear DataFrame manual
+            df = pd.DataFrame([x.split(',') for x in datos if ',' in x])
+            return df
+            
+    except Exception as e:
+        print(f"    Método alternativo falló: {e}")
+    
+    return None
+
+# Versión más simple para diagnóstico
+def diagnosticar_archivos():
+    """Función para diagnosticar el formato real de los archivos"""
+    ruta_base = r"X:\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre"
+    
+    for dia in [1, 2]:  # Solo primeros días para diagnóstico
+        carpeta_dia = f"{dia:02d}.10"
+        ruta_carpeta = os.path.join(ruta_base, carpeta_dia)
+        
+        if os.path.exists(ruta_carpeta):
+            print(f"\n🔍 DIAGNÓSTICO {carpeta_dia}:")
+            
+            # Encontrar un archivo de cada tipo
+            for tipo in ["CFTC_IR", "CFTC_FX", "CFTC_EQ", "CFTC_CR"]:
+                archivos = [f for f in os.listdir(ruta_carpeta) if f.startswith(tipo)]
+                if archivos:
+                    archivo_ejemplo = os.path.join(ruta_carpeta, archivos[0])
+                    print(f"  {tipo}: {archivos[0]}")
                     
                     try:
-                        with gzip.open(ruta_archivo, 'rt', encoding='utf-8') as f:
-                            df = pd.read_csv(f)
+                        with gzip.open(archivo_ejemplo, 'rt', encoding='utf-8') as f:
+                            primeras_lineas = [f.readline() for _ in range(3)]
                         
-                        df['Origen'] = archivo
-                        df['Dia'] = f"2025-10-{dia:02d}"
-                        todos_datos.append(df)
+                        print(f"    Línea 1: {primeras_lineas[0][:100]}...")
+                        print(f"    Línea 2: {primeras_lineas[1][:100]}...")
+                        print(f"    Delimitadores - Comas: {primeras_lineas[0].count(',')}, Puntos y coma: {primeras_lineas[0].count(';')}")
                         
                     except Exception as e:
-                        print(f"    Error en {archivo}: {e}")
-    
-    # Guardar resultado
-    if todos_datos:
-        df_final = pd.concat(todos_datos, ignore_index=True)
-        df_final.to_excel("Reportes_CFTC_Combinados.xlsx", index=False)
-        print(f"✓ Excel creado con {len(todos_datos)} archivos y {len(df_final)} registros")
+                        print(f"    Error diagnóstico: {e}")
 
 # Ejecutar
-procesar_cftc_especifico()
+if __name__ == "__main__":
+    print("🔧 INICIANDO PROCESAMIENTO CFTC...")
+    
+    # Primero diagnosticar (opcional)
+    # diagnosticar_archivos()
+    
+    # Luego procesar
+    resultado = procesar_archivos_cftc_corregido()
 
 \\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre
+
 
