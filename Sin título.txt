@@ -46,3 +46,6 @@ def procesar_cftc_especifico():
 
 # Ejecutar
 procesar_cftc_especifico()
+
+\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre
+
