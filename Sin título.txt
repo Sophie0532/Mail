@@ -1,299 +1,48 @@
-Sub DescargarCorreosSeleccionados()
-    On Error GoTo ErrorHandler
+import os
+import pandas as pd
+import gzip
+
+def procesar_cftc_especifico():
+    ruta_base = r"X:\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre"
     
-    Dim olApp As Outlook.Application
-    Dim olSelection As Outlook.Selection
-    Dim olMail As Outlook.mailItem
-    Dim objItem As Object
-    Dim carpetaDestino As String
-    Dim contadorCorreos As Integer
-    Dim contadorAdjuntos As Integer
-    Dim marcarComoLeido As Boolean
+    todos_datos = []
     
-    ' Configurar carpeta de destino - CAMBIA ESTA RUTA
-    carpetaDestino = "\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\DODD FRANK\DAILY MARK\Phoenix\Analisis\"
-    
-    ' Preguntar al usuario si desea marcar correos como leídos
-    marcarComoLeido = (MsgBox("¿Desea marcar los correos seleccionados como LEÍDOS después de descargarlos?", _
-                             vbYesNo + vbQuestion, "Marcar como leído")) = vbYes
-    
-    ' Verificar si hay correos seleccionados
-    Set olApp = Outlook.Application
-    Set olSelection = olApp.ActiveExplorer.Selection
-    
-    If olSelection.Count = 0 Then
-        MsgBox "Por favor, selecciona al menos un correo en Outlook.", vbInformation
-        Exit Sub
-    End If
-    
-    ' Crear carpeta si no existe
-    If Not FolderExists(carpetaDestino) Then
-        On Error Resume Next
-        MkDir carpetaDestino
-        If Err.Number <> 0 Then
-            MsgBox "Error al crear la carpeta destino: " & Err.Description, vbCritical
-            Exit Sub
-        End If
-        On Error GoTo ErrorHandler
-    End If
-    
-    contadorCorreos = 0
-    contadorAdjuntos = 0
-    
-    ' Procesar cada correo seleccionado
-    For Each objItem In olSelection
-        If TypeOf objItem Is mailItem Then
-            Set olMail = objItem
+    # Para cada día del mes
+    for dia in range(1, 32):
+        carpeta = f"{dia:02d}.10"
+        ruta_completa = os.path.join(ruta_base, carpeta)
+        
+        if os.path.exists(ruta_completa):
+            print(f"Revisando {carpeta}...")
             
-            ' Descargar este correo
-            If DescargarUnCorreo(olMail, carpetaDestino) Then
-                contadorCorreos = contadorCorreos + 1
-                contadorAdjuntos = contadorAdjuntos + olMail.Attachments.Count
+            # Listar todos los archivos en la carpeta
+            for archivo in os.listdir(ruta_completa):
+                ruta_archivo = os.path.join(ruta_completa, archivo)
                 
-                ' Marcar como leído si está seleccionado y el correo no está leído
-                If marcarComoLeido And (olMail.UnRead = True) Then
-                    olMail.UnRead = False
-                    olMail.Save
-                End If
-            End If
-        End If
-    Next
+                # Verificar patrones específicos
+                if (archivo.startswith("CFTC_IR_SubmissionReport_") and archivo.endswith("-en-6STB.csv.gz") or
+                    archivo.startswith("CFTC_FX_SubmissionReport_") and archivo.endswith("-en-5STB.csv.gz") or
+                    archivo.startswith("CFTC_EQ_SubmissionReport_") and archivo.endswith("-en-4STB.csv.gz") or
+                    archivo.startswith("CFTC_CR_SubmissionReport_") and archivo.endswith("-en-3STB.csv.gz")):
+                    
+                    print(f"  → Encontrado: {archivo}")
+                    
+                    try:
+                        with gzip.open(ruta_archivo, 'rt', encoding='utf-8') as f:
+                            df = pd.read_csv(f)
+                        
+                        df['Origen'] = archivo
+                        df['Dia'] = f"2025-10-{dia:02d}"
+                        todos_datos.append(df)
+                        
+                    except Exception as e:
+                        print(f"    Error en {archivo}: {e}")
     
-    ' Mostrar resultados
-    Dim mensajeResultado As String
-    mensajeResultado = "Descarga completada exitosamente!" & vbCrLf & vbCrLf & _
-                      "Correos procesados: " & contadorCorreos & vbCrLf & _
-                      "Adjuntos descargados: " & contadorAdjuntos & vbCrLf & _
-                      "Ubicación: " & carpetaDestino & vbCrLf & vbCrLf
-    
-    If marcarComoLeido Then
-        mensajeResultado = mensajeResultado & "✓ Correos marcados como LEÍDOS"
-    Else
-        mensajeResultado = mensajeResultado & "✗ Correos NO marcados como leídos"
-    End If
-    
-    MsgBox mensajeResultado, vbInformation
-    
-    ' Preguntar si desea abrir la carpeta de destino
-    If MsgBox("¿Desea abrir la carpeta de destino?", vbYesNo + vbQuestion) = vbYes Then
-        Shell "explorer.exe """ & carpetaDestino & """", vbNormalFocus
-    End If
-    
-    Exit Sub
-    
-ErrorHandler:
-    MsgBox "Error en la descarga: " & Err.Description & vbCrLf & _
-           "Número de error: " & Err.Number, vbCritical
-End Sub
+    # Guardar resultado
+    if todos_datos:
+        df_final = pd.concat(todos_datos, ignore_index=True)
+        df_final.to_excel("Reportes_CFTC_Combinados.xlsx", index=False)
+        print(f"✓ Excel creado con {len(todos_datos)} archivos y {len(df_final)} registros")
 
-' Función mejorada para descargar un correo individual
-Function DescargarUnCorreo(olMail As Outlook.mailItem, carpetaBase As String) As Boolean
-    On Error GoTo ErrorHandler
-    
-    Dim nombreCarpeta As String
-    Dim carpetaCorreo As String
-    Dim adjunto As Outlook.Attachment
-    Dim i As Integer
-    Dim fso As Object
-    Dim archivo As Object
-    
-    Set fso = CreateObject("Scripting.FileSystemObject")
-    
-    ' Crear nombre único para la carpeta del correo
-    nombreCarpeta = LimpiarNombre(olMail.Subject) & "_" & _
-                   Format(olMail.ReceivedTime, "yyyy-mm-dd_hh-nn-ss")
-    
-    ' Si el asunto está vacío, usar nombre genérico
-    If nombreCarpeta = "_" & Format(olMail.ReceivedTime, "yyyy-mm-dd_hh-nn-ss") Then
-        nombreCarpeta = "Correo_Sin_Asunto_" & Format(olMail.ReceivedTime, "yyyy-mm-dd_hh-nn-ss")
-    End If
-    
-    carpetaCorreo = carpetaBase & nombreCarpeta & "\"
-    
-    ' Crear carpeta para este correo
-    If Not FolderExists(carpetaCorreo) Then
-        On Error Resume Next
-        MkDir carpetaCorreo
-        If Err.Number <> 0 Then
-            DescargarUnCorreo = False
-            Exit Function
-        End If
-        On Error GoTo ErrorHandler
-    End If
-    
-    ' 1. Guardar el cuerpo del correo como texto (versión mejorada)
-    GuardarArchivoTexto carpetaCorreo & "cuerpo_correo.txt", _
-        "ASUNTO: " & olMail.Subject & vbCrLf & _
-        "DE: " & olMail.SenderName & " <" & olMail.SenderEmailAddress & ">" & vbCrLf & _
-        "PARA: " & olMail.To & vbCrLf & _
-        "FECHA: " & olMail.ReceivedTime & vbCrLf & _
-        "CC: " & olMail.CC & vbCrLf & _
-        "LEÍDO: " & IIf(olMail.UnRead, "NO", "SÍ") & vbCrLf & vbCrLf & _
-        "CONTENIDO:" & vbCrLf & vbCrLf & olMail.body
-    
-    ' 2. Guardar adjuntos con mejor manejo de errores
-    i = 1
-    For Each adjunto In olMail.Attachments
-        On Error Resume Next
-        adjunto.SaveAsFile carpetaCorreo & Format(i, "00") & "_" & LimpiarNombre(adjunto.DisplayName)
-        If Err.Number = 0 Then
-            i = i + 1
-        Else
-            ' Si falla un adjunto, continuar con los demás
-            Err.Clear
-        End If
-        On Error GoTo ErrorHandler
-    Next adjunto
-    
-    DescargarUnCorreo = True
-    Exit Function
-    
-ErrorHandler:
-    DescargarUnCorreo = False
-End Function
-
-' Función mejorada para limpiar nombres
-Function LimpiarNombre(nombre As String) As String
-    Dim caracteresInvalidos As String
-    Dim i As Integer
-    Dim tempNombre As String
-    
-    ' Caracteres no permitidos en nombres de archivo
-    caracteresInvalidos = "\/:*?""<>|"
-    tempNombre = Trim(nombre)
-    
-    ' Si está vacío, retornar cadena vacía
-    If Len(tempNombre) = 0 Then
-        LimpiarNombre = ""
-        Exit Function
-    End If
-    
-    ' Reemplazar caracteres inválidos
-    For i = 1 To Len(caracteresInvalidos)
-        tempNombre = Replace(tempNombre, Mid(caracteresInvalidos, i, 1), "_")
-    Next i
-    
-    ' Reemplazar espacios múltiples y limitar longitud
-    tempNombre = Replace(Replace(tempNombre, "  ", " "), "  ", " ")
-    If Len(tempNombre) > 100 Then
-        tempNombre = Left(tempNombre, 100)
-    End If
-    
-    LimpiarNombre = tempNombre
-End Function
-
-' Función mejorada para verificar existencia de carpeta
-Function FolderExists(ruta As String) As Boolean
-    On Error Resume Next
-    FolderExists = (GetAttr(ruta) And vbDirectory) = vbDirectory
-End Function
-
-' Función mejorada para guardar archivos de texto
-Sub GuardarArchivoTexto(rutaArchivo As String, contenido As String)
-    Dim fso As Object
-    Dim archivo As Object
-    
-    On Error GoTo ErrorHandler
-    
-    Set fso = CreateObject("Scripting.FileSystemObject")
-    
-    ' Verificar si la ruta es válida
-    If Len(Dir(rutaArchivo)) > 0 Then
-        ' Si el archivo existe, eliminarlo
-        Kill rutaArchivo
-    End If
-    
-    Set archivo = fso.CreateTextFile(rutaArchivo, True, True) ' True para Unicode
-    
-    archivo.Write contenido
-    archivo.Close
-    
-    Exit Sub
-    
-ErrorHandler:
-    ' Si hay error, intentar con codificación diferente
-    On Error Resume Next
-    If Not archivo Is Nothing Then archivo.Close
-    Set fso = CreateObject("Scripting.FileSystemObject")
-    Set archivo = fso.CreateTextFile(rutaArchivo, True, False) ' False para ASCII
-    archivo.Write contenido
-    archivo.Close
-End Sub
-
-' NUEVA FUNCIÓN: Botón rápido para descargar y marcar como leído
-Sub DescargarYMarcarLeidos()
-    ' Configuración automática para marcar como leídos
-    Dim olApp As Outlook.Application
-    Dim olSelection As Outlook.Selection
-    
-    Set olApp = Outlook.Application
-    Set olSelection = olApp.ActiveExplorer.Selection
-    
-    If olSelection.Count = 0 Then
-        MsgBox "Por favor, selecciona al menos un correo en Outlook.", vbInformation
-        Exit Sub
-    End If
-    
-    ' Ejecutar la función principal forzando marcar como leídos
-    DescargarCorreosSeleccionados
-End Sub
-
-' NUEVA FUNCIÓN: Botón para solo marcar como leídos sin descargar
-Sub MarcarComoLeidosRapido()
-    On Error GoTo ErrorHandler
-    
-    Dim olApp As Outlook.Application
-    Dim olSelection As Outlook.Selection
-    Dim objItem As Object
-    Dim olMail As Outlook.mailItem
-    Dim contadorMarcados As Integer
-    
-    Set olApp = Outlook.Application
-    Set olSelection = olApp.ActiveExplorer.Selection
-    
-    If olSelection.Count = 0 Then
-        MsgBox "Por favor, selecciona al menos un correo en Outlook.", vbInformation
-        Exit Sub
-    End If
-    
-    contadorMarcados = 0
-    
-    ' Marcar cada correo seleccionado como leído
-    For Each objItem In olSelection
-        If TypeOf objItem Is mailItem Then
-            Set olMail = objItem
-            If olMail.UnRead Then
-                olMail.UnRead = False
-                olMail.Save
-                contadorMarcados = contadorMarcados + 1
-            End If
-        End If
-    Next
-    
-    MsgBox "Correos marcados como leídos: " & contadorMarcados, vbInformation
-    
-    Exit Sub
-    
-ErrorHandler:
-    MsgBox "Error al marcar correos como leídos: " & Err.Description, vbCritical
-End Sub
-
-
-// En el editor de Power Query, ve a "Agregar columna" > "Columna condicional"
-= Table.AddColumn(
-    tu_tabla, 
-    "Mes_Nombre", 
-    each if [Mes] = 1 then "Enero"
-        else if [Mes] = 2 then "Febrero"
-        else if [Mes] = 3 then "Marzo"
-        else if [Mes] = 4 then "Abril"
-        else if [Mes] = 5 then "Mayo"
-        else if [Mes] = 6 then "Junio"
-        else if [Mes] = 7 then "Julio"
-        else if [Mes] = 8 then "Agosto"
-        else if [Mes] = 9 then "Septiembre"
-        else if [Mes] = 10 then "Octubre"
-        else if [Mes] = 11 then "Noviembre"
-        else if [Mes] = 12 then "Diciembre"
-        else "Mes inválido"
-)
+# Ejecutar
+procesar_cftc_especifico()
