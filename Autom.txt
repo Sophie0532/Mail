@@ -19,6 +19,45 @@ def encontrar_archivo_daily_mark(ruta_base):
     archivo_mas_reciente = max(archivos, key=os.path.getmtime)
     return archivo_mas_reciente
 
+def obtener_fecha_analizada(df_phoenix):
+    """
+    Obtiene la fecha analizada del campo PHOENIX_TIMESTAMP
+    """
+    try:
+        if 'PHOENIX_TIMESTAMP' in df_phoenix.columns:
+            # Tomar el primer timestamp no nulo
+            timestamp = df_phoenix['PHOENIX_TIMESTAMP'].dropna().iloc[0]
+            
+            # Convertir a datetime si es string
+            if isinstance(timestamp, str):
+                fecha = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+            else:
+                fecha = pd.to_datetime(timestamp)
+            
+            # Formatear como "Día 18 de Octubre analizado"
+            dia = fecha.day
+            mes = fecha.strftime('%B').lower()
+            
+            # Traducir meses al español
+            meses_espanol = {
+                'january': 'enero', 'february': 'febrero', 'march': 'marzo',
+                'april': 'abril', 'may': 'mayo', 'june': 'junio',
+                'july': 'julio', 'august': 'agosto', 'september': 'septiembre',
+                'october': 'octubre', 'november': 'noviembre', 'december': 'diciembre'
+            }
+            
+            mes_espanol = meses_espanol.get(mes, mes)
+            
+            return f"Día {dia} de {mes_espanol.capitalize()} analizado"
+        
+        else:
+            print("⚠️  No se encontró el campo PHOENIX_TIMESTAMP")
+            return "Fecha no disponible"
+            
+    except Exception as e:
+        print(f"⚠️  Error al obtener fecha: {e}")
+        return "Fecha no disponible"
+
 def leer_csv_con_errores(archivo_phoenix):
     """
     Lee el archivo CSV manejando posibles errores de formato
@@ -106,6 +145,11 @@ def comparar_archivos():
         # Leer CSV (Phoenix) con manejo de errores
         df_phoenix = leer_csv_con_errores(archivo_phoenix)
         print(f"✅ Phoenix leído: {len(df_phoenix)} filas, {len(df_phoenix.columns)} columnas")
+        
+        # Obtener y mostrar la fecha analizada
+        fecha_analizada = obtener_fecha_analizada(df_phoenix)
+        print(f"\n📅 {fecha_analizada}")
+        print()
         
         # Mostrar información de las columnas
         print("\n📊 COLUMNAS ENCONTRADAS:")
@@ -198,6 +242,8 @@ def comparar_archivos():
         print("=" * 60)
         print("📈 RESUMEN FINAL")
         print("=" * 60)
+        print(f"📅 {fecha_analizada}")  # Línea con la fecha analizada
+        print()
         print(f"📊 Total filas:")
         print(f"   • DailyMark: {len(df_daily):,}")
         print(f"   • Phoenix: {len(df_phoenix):,}")
