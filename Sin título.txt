@@ -1,29 +1,147 @@
 import pandas as pd
 import os
+import sys
 
-# VERSIÓN SIMPLE Y DIRECTA
+def consolidar_excel():
+    try:
+        # Ruta del archivo Excel
+        ruta_archivo = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre\Consolidado_OctubreCR_2025.xlsx"
+        
+        print("🔍 Verificando archivo...")
+        print(f"Ruta: {ruta_archivo}")
+        
+        # Verificar si el archivo existe
+        if not os.path.exists(ruta_archivo):
+            print(f"❌ ERROR: El archivo no existe en la ruta especificada")
+            print("Por favor verifica:")
+            print("1. Que la ruta sea correcta")
+            print("2. Que el archivo exista")
+            print("3. Que tengas permisos de acceso")
+            input("Presiona Enter para salir...")
+            return
+        
+        print("✅ Archivo encontrado")
+        
+        # Leer el archivo Excel
+        print("📖 Leyendo archivo Excel...")
+        excel_file = pd.ExcelFile(ruta_archivo)
+        hojas = excel_file.sheet_names
+        
+        print(f"✅ Se encontraron {len(hojas)} hojas:")
+        for hoja in hojas:
+            print(f"   - {hoja}")
+        
+        # Lista para almacenar todos los datos
+        todos_los_datos = []
+        
+        print("\n🔄 Procesando hojas...")
+        
+        for nombre_hoja in hojas:
+            try:
+                # Leer cada hoja
+                df = pd.read_excel(ruta_archivo, sheet_name=nombre_hoja)
+                
+                # Verificar si la hoja tiene datos
+                if df.empty:
+                    print(f"   ⚠️  Hoja '{nombre_hoja}' está vacía")
+                    continue
+                
+                # Agregar columna con el nombre de la hoja
+                df['Hoja_Origen'] = nombre_hoja
+                df['Dia_Procesado'] = nombre_hoja
+                
+                todos_los_datos.append(df)
+                print(f"   ✅ '{nombre_hoja}': {len(df)} registros")
+                
+            except Exception as e:
+                print(f"   ❌ Error en hoja '{nombre_hoja}': {e}")
+                continue
+        
+        # Verificar si se procesaron datos
+        if not todos_los_datos:
+            print("❌ No se pudieron procesar datos de ninguna hoja")
+            input("Presiona Enter para salir...")
+            return
+        
+        # Consolidar todos los datos
+        print("\n🔄 Consolidando datos...")
+        df_consolidado = pd.concat(todos_los_datos, ignore_index=True)
+        
+        print(f"✅ Consolidación completada:")
+        print(f"   - Total de hojas procesadas: {len(todos_los_datos)}")
+        print(f"   - Total de registros: {len(df_consolidado):,}")
+        
+        # Crear archivo de salida
+        directorio = os.path.dirname(ruta_archivo)
+        nombre_salida = "CONSOLIDADO_TOTAL_OCTUBRE_2025.xlsx"
+        ruta_salida = os.path.join(directorio, nombre_salida)
+        
+        # Guardar el archivo consolidado
+        print(f"💾 Guardando archivo consolidado...")
+        df_consolidado.to_excel(ruta_salida, index=False, sheet_name='CONSOLIDADO')
+        
+        print(f"🎉 ¡PROCESO COMPLETADO!")
+        print(f"📁 Archivo guardado: {nombre_salida}")
+        print(f"📊 Registros totales: {len(df_consolidado):,}")
+        print(f"📍 Ubicación: {directorio}")
+        
+        # Mostrar información adicional
+        print(f"\n📋 Información del archivo consolidado:")
+        print(f"   - Columnas: {len(df_consolidado.columns)}")
+        print(f"   - Memoria: {df_consolidado.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+        
+        # Esperar entrada del usuario antes de cerrar
+        input("\nPresiona Enter para cerrar...")
+        
+    except Exception as e:
+        print(f"❌ ERROR CRÍTICO: {e}")
+        print("Posibles causas:")
+        print("1. El archivo está corrupto")
+        print("2. No tienes permisos de lectura")
+        print("3. El archivo está abierto en otro programa")
+        input("Presiona Enter para salir...")
+
+# Script más simple y robusto
 def consolidar_simple():
-    # Ruta exacta de tu archivo
-    archivo = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre\Consolidado_OctubreCR_2025.xlsx"
-    
-    # Leer todas las hojas
-    hojas = pd.read_excel(archivo, sheet_name=None)
-    
-    # Agregar nombre de hoja a cada DataFrame y consolidar
-    datos_consolidados = []
-    
-    for nombre_hoja, datos in hojas.items():
-        datos['Dia'] = nombre_hoja  # Agregar columna con el día
-        datos_consolidados.append(datos)
-    
-    # Unir todos los datos
-    df_final = pd.concat(datos_consolidados, ignore_index=True)
-    
-    # Guardar resultado
-    df_final.to_excel(archivo.replace('.xlsx', '_CONSOLIDADO.xlsx'), index=False)
-    
-    print(f"✅ Listo! {len(hojas)} hojas consolidadas en un archivo")
-    print(f"📊 Total de registros: {len(df_final)}")
+    try:
+        print("Iniciando consolidación...")
+        
+        # Ruta del archivo
+        archivo = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre\Consolidado_OctubreCR_2025.xlsx"
+        
+        if not os.path.exists(archivo):
+            print("ERROR: Archivo no encontrado")
+            return
+        
+        # Leer todas las hojas
+        xl = pd.ExcelFile(archivo)
+        print(f"Hojas encontradas: {xl.sheet_names}")
+        
+        # Consolidar
+        frames = []
+        for sheet in xl.sheet_names:
+            df = pd.read_excel(archivo, sheet_name=sheet)
+            df['Dia'] = sheet
+            frames.append(df)
+            print(f"Procesada: {sheet} - {len(df)} registros")
+        
+        # Unir todo
+        resultado = pd.concat(frames, ignore_index=True)
+        
+        # Guardar
+        salida = archivo.replace('.xlsx', '_CONSOLIDADO.xlsx')
+        resultado.to_excel(salida, index=False)
+        
+        print(f"✅ Listo! Guardado como: {os.path.basename(salida)}")
+        print(f"📊 Total registros: {len(resultado)}")
+        
+    except Exception as e:
+        print(f"Error: {e}")
 
-# Ejecutar la versión simple
-consolidar_simple()
+if __name__ == "__main__":
+    print("=" * 50)
+    print("CONSOLIDADOR DE ARCHIVOS EXCEL")
+    print("=" * 50)
+    
+    # Ejecutar la función principal
+    consolidar_excel()
