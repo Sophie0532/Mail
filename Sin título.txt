@@ -1,159 +1,38 @@
-import os
 import pandas as pd
-import glob
-from pathlib import Path
 
-def unificar_archivos_ir():
-    # Ruta base donde están los archivos
-    ruta_base = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre"
+def unificar_excel_multiples_hojas():
+    # Ruta del archivo Excel
+    ruta_excel = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre\archivo.xlsx"
     
-    # Patrón específico para archivos IR
-    patron = "CFTC_IR_SubmissionReport_*-en-6STB.csv.gz"
-    
-    # Lista para almacenar todos los DataFrames
-    todos_los_datos = []
-    
-    print("Iniciando proceso de unificación de archivos IR...")
-    print(f"Ruta base: {ruta_base}")
-    print(f"Patrón buscado: {patron}")
-    print("-" * 60)
-    
-    # Contadores para estadísticas
-    total_archivos = 0
-    total_carpetas = 0
-    
-    # Iterar por cada día del mes (01.10 a 31.10)
-    for dia in range(1, 32):
-        # Formatear el día con dos dígitos
-        carpeta_dia = f"{dia:02d}.10"
-        ruta_dia = os.path.join(ruta_base, carpeta_dia)
+    try:
+        # Leer todas las hojas del Excel
+        todas_hojas = pd.read_excel(ruta_excel, sheet_name=None)
         
-        # Verificar si la carpeta existe
-        if not os.path.exists(ruta_dia):
-            print(f"❌ Carpeta {carpeta_dia} no existe, saltando...")
-            continue
+        print(f"Encontradas {len(todas_hojas)} hojas en el archivo")
         
-        total_carpetas += 1
-        print(f"📁 Procesando carpeta: {carpeta_dia}")
+        # Lista para almacenar los DataFrames de cada hoja
+        dataframes = []
         
-        # Buscar archivos que coincidan con el patrón
-        patron_busqueda = os.path.join(ruta_dia, patron)
-        archivos = glob.glob(patron_busqueda)
+        for nombre_hoja, df in todas_hojas.items():
+            # Agregar columna con el nombre de la hoja
+            df['Hoja_Origen'] = nombre_hoja
+            dataframes.append(df)
+            print(f"✅ Procesada hoja: {nombre_hoja} - {len(df)} registros")
         
-        if archivos:
-            print(f"   ✅ Encontrados {len(archivos)} archivos IR")
-            
-            # Procesar cada archivo encontrado
-            for archivo in archivos:
-                try:
-                    # Leer el archivo comprimido
-                    df_temp = pd.read_csv(archivo, compression='gzip')
-                    
-                    # Agregar columna con la fecha del archivo para identificar el día
-                    df_temp['Fecha_Dia'] = f"2025-10-{dia:02d}"
-                    df_temp['Archivo_Origen'] = os.path.basename(archivo)
-                    
-                    # Agregar a la lista
-                    todos_los_datos.append(df_temp)
-                    total_archivos += 1
-                    
-                    print(f"      📄 Procesado: {os.path.basename(archivo)} - {len(df_temp)} registros")
-                    
-                except Exception as e:
-                    print(f"      ❌ Error al procesar {os.path.basename(archivo)}: {e}")
-        else:
-            print(f"   ⚠️  No se encontraron archivos IR en {carpeta_dia}")
-    
-    print("-" * 60)
-    
-    # Consolidar todos los datos
-    if todos_los_datos:
-        print(f"Consolidando {len(todos_los_datos)} archivos...")
-        df_consolidado = pd.concat(todos_los_datos, ignore_index=True)
+        # Unificar todas las hojas
+        df_unificado = pd.concat(dataframes, ignore_index=True)
         
-        print(f"✅ Consolidación completada:")
-        print(f"   - Total de archivos procesados: {total_archivos}")
-        print(f"   - Total de carpetas revisadas: {total_carpetas}")
-        print(f"   - Total de registros consolidados: {len(df_consolidado)}")
+        # Guardar como nuevo archivo
+        ruta_salida = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre\CONSOLIDADO_TOTAL.xlsx"
+        df_unificado.to_excel(ruta_salida, index=False)
         
-        # Guardar como CSV
-        nombre_csv = "CONSOLIDADO_CFTC_IR_OCTUBRE_2025.csv"
-        ruta_csv = os.path.join(ruta_base, nombre_csv)
-        df_consolidado.to_csv(ruta_csv, index=False, encoding='utf-8-sig')
-        print(f"💾 Archivo CSV guardado: {ruta_csv}")
+        print(f"\n✅ Unificación completada:")
+        print(f"   - Hojas procesadas: {len(dataframes)}")
+        print(f"   - Registros totales: {len(df_unificado)}")
+        print(f"   - Archivo guardado: {ruta_salida}")
         
-        # Guardar como Excel
-        nombre_excel = "CONSOLIDADO_CFTC_IR_OCTUBRE_2025.xlsx"
-        ruta_excel = os.path.join(ruta_base, nombre_excel)
-        
-        # Guardar como Excel (puede tomar más tiempo dependiendo del tamaño)
-        try:
-            df_consolidado.to_excel(ruta_excel, index=False, engine='openpyxl')
-            print(f"💾 Archivo Excel guardado: {ruta_excel}")
-        except Exception as e:
-            print(f"⚠️  No se pudo guardar como Excel: {e}")
-            print("   Solo se guardó el archivo CSV")
-        
-        # Mostrar información sobre las columnas
-        print("\n📊 Estructura del archivo consolidado:")
-        print(f"   - Columnas: {list(df_consolidado.columns)}")
-        print(f"   - Tipos de datos:")
-        for columna, tipo in df_consolidado.dtypes.items():
-            print(f"     • {columna}: {tipo}")
-            
-    else:
-        print("❌ No se encontraron archivos que coincidan con el patrón especificado.")
-        print("   Verifique la ruta y el patrón de búsqueda.")
+    except Exception as e:
+        print(f"❌ Error: {e}")
 
-# Función alternativa más rápida si hay muchos archivos
-def unificar_archivos_ir_rapido():
-    ruta_base = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre"
-    patron = "CFTC_IR_SubmissionReport_*-en-6STB.csv.gz"
-    
-    print("Búsqueda rápida de todos los archivos IR...")
-    
-    # Buscar todos los archivos que coincidan en todas las subcarpetas
-    patron_busqueda = os.path.join(ruta_base, "**", patron)
-    todos_archivos = glob.glob(patron_busqueda, recursive=True)
-    
-    print(f"Encontrados {len(todos_archivos)} archivos IR")
-    
-    if not todos_archivos:
-        print("No se encontraron archivos.")
-        return
-    
-    # Procesar todos los archivos encontrados
-    todos_dfs = []
-    
-    for archivo in todos_archivos:
-        try:
-            # Extraer el día de la ruta del archivo
-            carpeta = os.path.basename(os.path.dirname(archivo))
-            dia = carpeta.split('.')[0]  # Extraer "01" de "01.10"
-            
-            df = pd.read_csv(archivo, compression='gzip')
-            df['Fecha_Dia'] = f"2025-10-{dia}"
-            df['Archivo_Origen'] = os.path.basename(archivo)
-            
-            todos_dfs.append(df)
-            print(f"Procesado: {os.path.basename(archivo)}")
-            
-        except Exception as e:
-            print(f"Error en {os.path.basename(archivo)}: {e}")
-    
-    # Consolidar
-    if todos_dfs:
-        df_consolidado = pd.concat(todos_dfs, ignore_index=True)
-        
-        # Guardar CSV
-        ruta_csv = os.path.join(ruta_base, "CONSOLIDADO_CFTC_IR_OCTUBRE_2025.csv")
-        df_consolidado.to_csv(ruta_csv, index=False, encoding='utf-8-sig')
-        print(f"✅ CSV guardado: {ruta_csv}")
-        print(f"📊 Total de registros: {len(df_consolidado)}")
-
-if __name__ == "__main__":
-    # Ejecutar la versión detallada
-    unificar_archivos_ir()
-    
-    # Para ejecutar la versión rápida, descomenta la línea siguiente:
-    # unificar_archivos_ir_rapido()
+# Ejecutar
+# unificar_excel_multiples_hojas()
