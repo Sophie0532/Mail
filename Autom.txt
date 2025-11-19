@@ -19,20 +19,20 @@ def encontrar_archivo_daily_mark(ruta_base):
     archivo_mas_reciente = max(archivos, key=os.path.getmtime)
     return archivo_mas_reciente
 
-def obtener_fecha_analizada(df_phoenix):
+def obtener_fecha_analizada(df_daily):
     """
-    Obtiene la fecha analizada del campo PHOENIX_TIMESTAMP
+    Obtiene la fecha analizada del campo Communication date en DailyMark
     """
     try:
-        if 'PHOENIX_TIMESTAMP' in df_phoenix.columns:
-            # Tomar el primer timestamp no nulo
-            timestamp = df_phoenix['PHOENIX_TIMESTAMP'].dropna().iloc[0]
+        if 'Communication date' in df_daily.columns:
+            # Tomar el primer Communication date no nulo
+            fecha_comunicacion = df_daily['Communication date'].dropna().iloc[0]
             
-            # Convertir a datetime si es string
-            if isinstance(timestamp, str):
-                fecha = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+            # Convertir a datetime si es necesario
+            if isinstance(fecha_comunicacion, str):
+                fecha = datetime.strptime(fecha_comunicacion, '%Y-%m-%d')
             else:
-                fecha = pd.to_datetime(timestamp)
+                fecha = pd.to_datetime(fecha_comunicacion)
             
             # Formatear como "Día 18 de Octubre analizado"
             dia = fecha.day
@@ -51,7 +51,11 @@ def obtener_fecha_analizada(df_phoenix):
             return f"Día {dia} de {mes_espanol.capitalize()} analizado"
         
         else:
-            print("⚠️  No se encontró el campo PHOENIX_TIMESTAMP")
+            print("⚠️  No se encontró el campo 'Communication date' en DailyMark")
+            # Intentar buscar columnas similares
+            columnas_similares = [col for col in df_daily.columns if 'date' in col.lower() or 'fecha' in col.lower()]
+            if columnas_similares:
+                print(f"   • Columnas similares encontradas: {columnas_similares}")
             return "Fecha no disponible"
             
     except Exception as e:
@@ -142,14 +146,12 @@ def comparar_archivos():
         df_daily = pd.read_excel(archivo_daily_mark)
         print(f"✅ DailyMark leído: {len(df_daily)} filas, {len(df_daily.columns)} columnas")
         
+        # Obtener y mostrar la fecha analizada
+        fecha_analizada = obtener_fecha_analizada(df_daily)
+        
         # Leer CSV (Phoenix) con manejo de errores
         df_phoenix = leer_csv_con_errores(archivo_phoenix)
         print(f"✅ Phoenix leído: {len(df_phoenix)} filas, {len(df_phoenix.columns)} columnas")
-        
-        # Obtener y mostrar la fecha analizada
-        fecha_analizada = obtener_fecha_analizada(df_phoenix)
-        print(f"\n📅 {fecha_analizada}")
-        print()
         
         # Mostrar información de las columnas
         print("\n📊 COLUMNAS ENCONTRADAS:")
