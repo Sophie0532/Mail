@@ -203,12 +203,12 @@ def comparar_archivos():
         print(f"   • Phoenix: {len(df_phoenix):,}")
         print()
         
-        print(f"🔍 VALORES CERO EN CAMPO MTM:")
+        print(f"🔍 Valores Cero MTM:")
         print(f"   • DailyMark - Valores cero: {resultados_mtm_daily['total_ceros']}")
         print(f"   • Phoenix - Valores cero: {resultados_mtm_phoenix['total_ceros']}")
         print()
         
-        print(f"📝 VALORES VACÍOS MTM:")
+        print(f"📝 Valores Vacios MTM:")
         print(f"   • DailyMark - Valores vacíos: {resultados_mtm_daily['total_vacios']}")
         if resultados_mtm_daily['ids_vacios']:
             print(f"     USIs correspondientes: {resultados_mtm_daily['ids_vacios']}")
