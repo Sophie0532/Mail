@@ -24,15 +24,54 @@ def obtener_fecha_analizada(df_daily):
     Obtiene la fecha analizada del campo Communication date en DailyMark
     """
     try:
-        if 'Communication date' in df_daily.columns:
-            # Tomar el primer Communication date no nulo
-            fecha_comunicacion = df_daily['Communication date'].dropna().iloc[0]
+        print("\n🔍 Buscando columna de fecha en DailyMark...")
+        print(f"   Columnas disponibles: {list(df_daily.columns)}")
+        
+        # Buscar la columna Communication date (puede tener variaciones)
+        posibles_columnas_fecha = [
+            'Communication date', 
+            'Communication Date',
+            'COMMUNICATION DATE',
+            'communication date',
+            'Date',
+            'DATE',
+            'Trade Date',
+            'TradeDate',
+            'Valuation Date',
+            'ValuationDate'
+        ]
+        
+        columna_encontrada = None
+        for columna in posibles_columnas_fecha:
+            if columna in df_daily.columns:
+                columna_encontrada = columna
+                break
+        
+        if columna_encontrada:
+            print(f"   ✅ Columna encontrada: '{columna_encontrada}'")
             
-            # Convertir a datetime si es necesario
+            # Tomar el primer Communication date no nulo
+            fecha_comunicacion = df_daily[columna_encontrada].dropna().iloc[0]
+            print(f"   📅 Valor de fecha encontrado: {fecha_comunicacion}")
+            print(f"   📊 Tipo de dato: {type(fecha_comunicacion)}")
+            
+            # Convertir a datetime
             if isinstance(fecha_comunicacion, str):
-                fecha = datetime.strptime(fecha_comunicacion, '%Y-%m-%d')
+                # Intentar diferentes formatos de fecha
+                formatos_fecha = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y.%m.%d', '%d-%m-%Y', '%m-%d-%Y']
+                for formato in formatos_fecha:
+                    try:
+                        fecha = datetime.strptime(fecha_comunicacion, formato)
+                        break
+                    except ValueError:
+                        continue
+                else:
+                    # Si ninguno funciona, usar pandas
+                    fecha = pd.to_datetime(fecha_comunicacion)
             else:
                 fecha = pd.to_datetime(fecha_comunicacion)
+            
+            print(f"   🔄 Fecha convertida: {fecha}")
             
             # Formatear como "Día 18 de Octubre analizado"
             dia = fecha.day
@@ -43,24 +82,28 @@ def obtener_fecha_analizada(df_daily):
                 'january': 'enero', 'february': 'febrero', 'march': 'marzo',
                 'april': 'abril', 'may': 'mayo', 'june': 'junio',
                 'july': 'julio', 'august': 'agosto', 'september': 'septiembre',
-                'october': 'octubre', 'november': 'noviembre', 'december': 'diciembre'
+                'october': 'octubre', 'november': 'noviembre', 'deccember': 'diciembre'
             }
             
             mes_espanol = meses_espanol.get(mes, mes)
             
-            return f"Día {dia} de {mes_espanol.capitalize()} analizado"
+            resultado = f"Día {dia} de {mes_espanol.capitalize()} analizado"
+            print(f"   ✅ Fecha formateada: {resultado}")
+            return resultado
         
         else:
-            print("⚠️  No se encontró el campo 'Communication date' en DailyMark")
-            # Intentar buscar columnas similares
-            columnas_similares = [col for col in df_daily.columns if 'date' in col.lower() or 'fecha' in col.lower()]
-            if columnas_similares:
-                print(f"   • Columnas similares encontradas: {columnas_similares}")
-            return "Fecha no disponible"
+            print("   ❌ No se encontró ninguna columna de fecha conocida")
+            # Mostrar todas las columnas disponibles para debugging
+            print("   📋 Todas las columnas disponibles:")
+            for i, columna in enumerate(df_daily.columns, 1):
+                print(f"      {i:2d}. {columna}")
+            return "Fecha no disponible - Columna no encontrada"
             
     except Exception as e:
-        print(f"⚠️  Error al obtener fecha: {e}")
-        return "Fecha no disponible"
+        print(f"   ❌ Error al obtener fecha: {e}")
+        import traceback
+        print(f"   📝 Detalles del error: {traceback.format_exc()}")
+        return f"Fecha no disponible - Error: {str(e)}"
 
 def leer_csv_con_errores(archivo_phoenix):
     """
