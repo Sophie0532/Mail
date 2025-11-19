@@ -1,38 +1,29 @@
 import pandas as pd
+import os
 
-def unificar_excel_multiples_hojas():
-    # Ruta del archivo Excel
-    ruta_excel = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre\archivo.xlsx"
+# VERSIÓN SIMPLE Y DIRECTA
+def consolidar_simple():
+    # Ruta exacta de tu archivo
+    archivo = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre\Consolidado_OctubreCR_2025.xlsx"
     
-    try:
-        # Leer todas las hojas del Excel
-        todas_hojas = pd.read_excel(ruta_excel, sheet_name=None)
-        
-        print(f"Encontradas {len(todas_hojas)} hojas en el archivo")
-        
-        # Lista para almacenar los DataFrames de cada hoja
-        dataframes = []
-        
-        for nombre_hoja, df in todas_hojas.items():
-            # Agregar columna con el nombre de la hoja
-            df['Hoja_Origen'] = nombre_hoja
-            dataframes.append(df)
-            print(f"✅ Procesada hoja: {nombre_hoja} - {len(df)} registros")
-        
-        # Unificar todas las hojas
-        df_unificado = pd.concat(dataframes, ignore_index=True)
-        
-        # Guardar como nuevo archivo
-        ruta_salida = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre\CONSOLIDADO_TOTAL.xlsx"
-        df_unificado.to_excel(ruta_salida, index=False)
-        
-        print(f"\n✅ Unificación completada:")
-        print(f"   - Hojas procesadas: {len(dataframes)}")
-        print(f"   - Registros totales: {len(df_unificado)}")
-        print(f"   - Archivo guardado: {ruta_salida}")
-        
-    except Exception as e:
-        print(f"❌ Error: {e}")
+    # Leer todas las hojas
+    hojas = pd.read_excel(archivo, sheet_name=None)
+    
+    # Agregar nombre de hoja a cada DataFrame y consolidar
+    datos_consolidados = []
+    
+    for nombre_hoja, datos in hojas.items():
+        datos['Dia'] = nombre_hoja  # Agregar columna con el día
+        datos_consolidados.append(datos)
+    
+    # Unir todos los datos
+    df_final = pd.concat(datos_consolidados, ignore_index=True)
+    
+    # Guardar resultado
+    df_final.to_excel(archivo.replace('.xlsx', '_CONSOLIDADO.xlsx'), index=False)
+    
+    print(f"✅ Listo! {len(hojas)} hojas consolidadas en un archivo")
+    print(f"📊 Total de registros: {len(df_final)}")
 
-# Ejecutar
-# unificar_excel_multiples_hojas()
+# Ejecutar la versión simple
+consolidar_simple()
