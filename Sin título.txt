@@ -1,253 +1,159 @@
 import os
-import gzip
 import pandas as pd
-from pathlib import Path
 import glob
-import csv
+from pathlib import Path
 
-def procesar_archivos_mes_octubre_con_consolidado():
-    # Configuración de rutas
+def unificar_archivos_ir():
+    # Ruta base donde están los archivos
     ruta_base = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre"
-    archivo_salida = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\Consolidado_Octubre_2025.xlsx"
     
-    # Patrón del archivo a buscar - CORREGIDO
-    patron_archivo = "CFTC_IR_SubmissionReport_*-en-65TB.csv.gz"  # Cambiado de 6STB a 65TB
+    # Patrón específico para archivos IR
+    patron = "CFTC_IR_SubmissionReport_*-en-6STB.csv.gz"
     
-    # Lista para controlar si hay datos para guardar
-    hojas_creadas = False
-    todos_los_dataframes = []  # Lista para almacenar todos los DataFrames consolidados
+    # Lista para almacenar todos los DataFrames
+    todos_los_datos = []
     
-    # Crear un escritor de Excel
-    with pd.ExcelWriter(archivo_salida, engine='openpyxl') as writer:
+    print("Iniciando proceso de unificación de archivos IR...")
+    print(f"Ruta base: {ruta_base}")
+    print(f"Patrón buscado: {patron}")
+    print("-" * 60)
+    
+    # Contadores para estadísticas
+    total_archivos = 0
+    total_carpetas = 0
+    
+    # Iterar por cada día del mes (01.10 a 31.10)
+    for dia in range(1, 32):
+        # Formatear el día con dos dígitos
+        carpeta_dia = f"{dia:02d}.10"
+        ruta_dia = os.path.join(ruta_base, carpeta_dia)
         
-        # Procesar cada día del mes (01 al 31)
-        for dia in range(1, 32):
-            # Formatear día con dos dígitos
-            dia_formateado = f"{dia:02d}"
-            carpeta_dia = os.path.join(ruta_base, f"{dia_formateado}.10")
+        # Verificar si la carpeta existe
+        if not os.path.exists(ruta_dia):
+            print(f"❌ Carpeta {carpeta_dia} no existe, saltando...")
+            continue
+        
+        total_carpetas += 1
+        print(f"📁 Procesando carpeta: {carpeta_dia}")
+        
+        # Buscar archivos que coincidan con el patrón
+        patron_busqueda = os.path.join(ruta_dia, patron)
+        archivos = glob.glob(patron_busqueda)
+        
+        if archivos:
+            print(f"   ✅ Encontrados {len(archivos)} archivos IR")
             
-            # Verificar si existe la carpeta del día
-            if not os.path.exists(carpeta_dia):
-                print(f"Carpeta no encontrada: {carpeta_dia}")
-                continue
-            
-            print(f"Procesando día: {dia_formateado}.10")
-            
-            # Buscar archivos que coincidan con el patrón CORREGIDO
-            patron_busqueda = os.path.join(carpeta_dia, patron_archivo)
-            archivos = glob.glob(patron_busqueda)
-            
-            if not archivos:
-                print(f"  No se encontraron archivos con el patrón en {dia_formateado}.10")
-                # Mostrar qué archivos sí hay en la carpeta para debug
-                otros_archivos = glob.glob(os.path.join(carpeta_dia, "*.gz"))
-                if otros_archivos:
-                    print(f"  Archivos encontrados: {[os.path.basename(f) for f in otros_archivos[:3]]}")
-                continue
-            
-            # Lista para almacenar todos los DataFrames del día
-            dataframes_dia = []
-            
-            # Procesar cada archivo del día
+            # Procesar cada archivo encontrado
             for archivo in archivos:
-                nombre_archivo = os.path.basename(archivo)
-                print(f"  Procesando: {nombre_archivo}")
-                
                 try:
-                    # Método 1: Intentar con pandas primero
-                    with gzip.open(archivo, 'rt', encoding='utf-8') as f:
-                        # Probar diferentes encodings si es necesario
-                        try:
-                            df = pd.read_csv(f)
-                        except UnicodeDecodeError:
-                            f.seek(0)
-                            df = pd.read_csv(f, encoding='latin-1')
+                    # Leer el archivo comprimido
+                    df_temp = pd.read_csv(archivo, compression='gzip')
                     
-                    if not df.empty:
-                        dataframes_dia.append(df)
-                        print(f"    ✓ Archivo procesado: {len(df)} registros")
-                    else:
-                        print(f"    ⚠ Archivo vacío: {nombre_archivo}")
-                        
-                except pd.errors.ParserError as e:
-                    # Método 2: Si falla pandas, usar el módulo csv con manejo de errores
-                    try:
-                        print(f"    Usando método alternativo para: {nombre_archivo}")
-                        filas = []
-                        with gzip.open(archivo, 'rt', encoding='utf-8') as f:
-                            lector = csv.reader(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-                            try:
-                                headers = next(lector)  # Leer headers
-                            except StopIteration:
-                                print(f"    ⚠ Archivo vacío: {nombre_archivo}")
-                                continue
-                            
-                            for fila in lector:
-                                if fila:  # Solo agregar filas no vacías
-                                    filas.append(fila)
-                        
-                        if filas and headers:
-                            df = pd.DataFrame(filas, columns=headers)
-                            dataframes_dia.append(df)
-                            print(f"    ✓ Archivo procesado (método alternativo): {len(df)} registros")
-                        else:
-                            print(f"    ⚠ No hay datos válidos en: {nombre_archivo}")
-                            
-                    except Exception as e:
-                        print(f"    Error con método CSV: {str(e)}")
-                        # Método 3: Leer como texto y limpiar
-                        try:
-                            print(f"    Usando método de limpieza de texto para: {nombre_archivo}")
-                            with gzip.open(archivo, 'rt', encoding='utf-8') as f:
-                                lineas = f.readlines()
-                            
-                            if len(lineas) > 1:
-                                # Asumir que la primera línea son los headers
-                                headers = [h.strip().strip('"') for h in lineas[0].strip().split(',')]
-                                datos = []
-                                
-                                for linea in lineas[1:]:
-                                    if linea.strip():  # Solo líneas no vacías
-                                        campos = [c.strip().strip('"') for c in linea.strip().split(',')]
-                                        if len(campos) == len(headers):
-                                            datos.append(campos)
-                                        else:
-                                            # Si no coinciden, intentar unir los campos extras al último campo
-                                            if len(campos) > len(headers):
-                                                campos_corregidos = campos[:len(headers)-1] + [','.join(campos[len(headers)-1:])]
-                                                datos.append(campos_corregidos)
-                                
-                                if datos:
-                                    df = pd.DataFrame(datos, columns=headers)
-                                    dataframes_dia.append(df)
-                                    print(f"    ✓ Archivo procesado (método texto): {len(df)} registros")
-                                else:
-                                    print(f"    ⚠ No hay datos después de limpieza: {nombre_archivo}")
-                            else:
-                                print(f"    ⚠ Archivo con muy pocas líneas: {nombre_archivo}")
-                                    
-                        except Exception as e3:
-                            print(f"    ✗ Error crítico procesando {nombre_archivo}: {str(e3)}")
-                            continue
-                
-                except Exception as e:
-                    print(f"    ✗ Error general al procesar {nombre_archivo}: {str(e)}")
-                    continue
-            
-            # Consolidar todos los DataFrames del día
-            if dataframes_dia:
-                try:
-                    # Concatenar todos los DataFrames del día
-                    df_consolidado_dia = pd.concat(dataframes_dia, ignore_index=True)
+                    # Agregar columna con la fecha del archivo para identificar el día
+                    df_temp['Fecha_Dia'] = f"2025-10-{dia:02d}"
+                    df_temp['Archivo_Origen'] = os.path.basename(archivo)
                     
-                    # Agregar columna con la fecha del día
-                    df_consolidado_dia['Fecha_Procesamiento'] = f"2025-10-{dia_formateado}"
+                    # Agregar a la lista
+                    todos_los_datos.append(df_temp)
+                    total_archivos += 1
                     
-                    # Agregar a la lista general para el consolidado final
-                    todos_los_dataframes.append(df_consolidado_dia)
-                    
-                    # Nombre de la hoja (máximo 31 caracteres para Excel)
-                    nombre_hoja = f"Dia_{dia_formateado}"
-                    if len(nombre_hoja) > 31:
-                        nombre_hoja = nombre_hoja[:31]
-                    
-                    # Guardar en Excel (sin la columna adicional para las hojas individuales)
-                    df_para_hoja_individual = df_consolidado_dia.drop('Fecha_Procesamiento', axis=1)
-                    df_para_hoja_individual.to_excel(writer, sheet_name=nombre_hoja, index=False)
-                    hojas_creadas = True
-                    
-                    print(f"  ✅ Día {dia_formateado}.10 completado - {len(archivos)} archivos procesados, {len(df_consolidado_dia)} registros")
+                    print(f"      📄 Procesado: {os.path.basename(archivo)} - {len(df_temp)} registros")
                     
                 except Exception as e:
-                    print(f"  ✗ Error al consolidar día {dia_formateado}.10: {str(e)}")
-            else:
-                print(f"  ⚠ No se pudieron procesar archivos para el día {dia_formateado}.10")
-        
-        # Crear hoja consolidada con todos los días
-        if todos_los_dataframes:
-            try:
-                print("\n📊 Creando hoja consolidada con todos los días...")
-                df_consolidado_total = pd.concat(todos_los_dataframes, ignore_index=True)
-                
-                # Guardar hoja consolidada
-                df_consolidado_total.to_excel(writer, sheet_name='CONSOLIDADO_TOTAL', index=False)
-                print(f"  ✅ Hoja consolidada creada con {len(df_consolidado_total)} registros totales")
-                
-            except Exception as e:
-                print(f"  ✗ Error al crear hoja consolidada: {str(e)}")
-        
-        # SI NO SE CREARON HOJAS, CREAR UNA HOJA CON MENSAJE
-        if not hojas_creadas and not todos_los_dataframes:
-            print("\n⚠ No se encontraron datos procesables. Creando hoja informativa...")
-            df_info = pd.DataFrame({
-                'Estado': ['No se encontraron datos procesables'],
-                'Motivo': ['Posibles causas: patrón incorrecto, archivos vacíos, o problemas de formato'],
-                'Patrón_Buscado': [patron_archivo],
-                'Ruta_Base': [ruta_base]
-            })
-            df_info.to_excel(writer, sheet_name='INFO', index=False)
-            print("  ✅ Hoja INFO creada")
+                    print(f"      ❌ Error al procesar {os.path.basename(archivo)}: {e}")
+        else:
+            print(f"   ⚠️  No se encontraron archivos IR en {carpeta_dia}")
     
-    print(f"\n🎉 Proceso completado. Archivo guardado en: {archivo_salida}")
+    print("-" * 60)
+    
+    # Consolidar todos los datos
+    if todos_los_datos:
+        print(f"Consolidando {len(todos_los_datos)} archivos...")
+        df_consolidado = pd.concat(todos_los_datos, ignore_index=True)
+        
+        print(f"✅ Consolidación completada:")
+        print(f"   - Total de archivos procesados: {total_archivos}")
+        print(f"   - Total de carpetas revisadas: {total_carpetas}")
+        print(f"   - Total de registros consolidados: {len(df_consolidado)}")
+        
+        # Guardar como CSV
+        nombre_csv = "CONSOLIDADO_CFTC_IR_OCTUBRE_2025.csv"
+        ruta_csv = os.path.join(ruta_base, nombre_csv)
+        df_consolidado.to_csv(ruta_csv, index=False, encoding='utf-8-sig')
+        print(f"💾 Archivo CSV guardado: {ruta_csv}")
+        
+        # Guardar como Excel
+        nombre_excel = "CONSOLIDADO_CFTC_IR_OCTUBRE_2025.xlsx"
+        ruta_excel = os.path.join(ruta_base, nombre_excel)
+        
+        # Guardar como Excel (puede tomar más tiempo dependiendo del tamaño)
+        try:
+            df_consolidado.to_excel(ruta_excel, index=False, engine='openpyxl')
+            print(f"💾 Archivo Excel guardado: {ruta_excel}")
+        except Exception as e:
+            print(f"⚠️  No se pudo guardar como Excel: {e}")
+            print("   Solo se guardó el archivo CSV")
+        
+        # Mostrar información sobre las columnas
+        print("\n📊 Estructura del archivo consolidado:")
+        print(f"   - Columnas: {list(df_consolidado.columns)}")
+        print(f"   - Tipos de datos:")
+        for columna, tipo in df_consolidado.dtypes.items():
+            print(f"     • {columna}: {tipo}")
+            
+    else:
+        print("❌ No se encontraron archivos que coincidan con el patrón especificado.")
+        print("   Verifique la ruta y el patrón de búsqueda.")
 
-# Función para verificar el patrón correcto de archivos
-def verificar_patron_archivos():
+# Función alternativa más rápida si hay muchos archivos
+def unificar_archivos_ir_rapido():
     ruta_base = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre"
+    patron = "CFTC_IR_SubmissionReport_*-en-6STB.csv.gz"
     
-    print("🔍 Verificando patrones de archivos...")
+    print("Búsqueda rápida de todos los archivos IR...")
     
-    for dia in range(21, 32):  # Días del 21 al 31
-        dia_formateado = f"{dia:02d}"
-        carpeta_dia = os.path.join(ruta_base, f"{dia_formateado}.10")
+    # Buscar todos los archivos que coincidan en todas las subcarpetas
+    patron_busqueda = os.path.join(ruta_base, "**", patron)
+    todos_archivos = glob.glob(patron_busqueda, recursive=True)
+    
+    print(f"Encontrados {len(todos_archivos)} archivos IR")
+    
+    if not todos_archivos:
+        print("No se encontraron archivos.")
+        return
+    
+    # Procesar todos los archivos encontrados
+    todos_dfs = []
+    
+    for archivo in todos_archivos:
+        try:
+            # Extraer el día de la ruta del archivo
+            carpeta = os.path.basename(os.path.dirname(archivo))
+            dia = carpeta.split('.')[0]  # Extraer "01" de "01.10"
+            
+            df = pd.read_csv(archivo, compression='gzip')
+            df['Fecha_Dia'] = f"2025-10-{dia}"
+            df['Archivo_Origen'] = os.path.basename(archivo)
+            
+            todos_dfs.append(df)
+            print(f"Procesado: {os.path.basename(archivo)}")
+            
+        except Exception as e:
+            print(f"Error en {os.path.basename(archivo)}: {e}")
+    
+    # Consolidar
+    if todos_dfs:
+        df_consolidado = pd.concat(todos_dfs, ignore_index=True)
         
-        if os.path.exists(carpeta_dia):
-            print(f"\n📁 Día {dia_formateado}.10:")
-            
-            # Buscar diferentes patrones posibles
-            patrones = [
-                "CFTC_IR_SubmissionReport_*-en-65TB.csv.gz",  # Patrón corregido
-                "CFTC_IR_SubmissionReport_*-en-6STB.csv.gz",  # Patrón anterior
-                "CFTC_IR_SubmissionReport_*.csv.gz"           # Patrón general
-            ]
-            
-            for patron in patrones:
-                archivos = glob.glob(os.path.join(carpeta_dia, patron))
-                if archivos:
-                    print(f"  Patrón '{patron}': {len(archivos)} archivos")
-                    for archivo in archivos[:2]:  # Mostrar primeros 2
-                        print(f"    - {os.path.basename(archivo)}")
-                    if len(archivos) > 2:
-                        print(f"    ... y {len(archivos) - 2} más")
-                    break
-            else:
-                # Si no encontró con ningún patrón, mostrar qué archivos hay
-                todos_archivos = glob.glob(os.path.join(carpeta_dia, "*.gz"))
-                if todos_archivos:
-                    print(f"  Otros archivos .gz encontrados:")
-                    for archivo in todos_archivos[:3]:
-                        print(f"    - {os.path.basename(archivo)}")
-                else:
-                    print("  No se encontraron archivos .gz")
+        # Guardar CSV
+        ruta_csv = os.path.join(ruta_base, "CONSOLIDADO_CFTC_IR_OCTUBRE_2025.csv")
+        df_consolidado.to_csv(ruta_csv, index=False, encoding='utf-8-sig')
+        print(f"✅ CSV guardado: {ruta_csv}")
+        print(f"📊 Total de registros: {len(df_consolidado)}")
 
-# Función principal
 if __name__ == "__main__":
-    print("🚀 Iniciando procesamiento con consolidado total...")
+    # Ejecutar la versión detallada
+    unificar_archivos_ir()
     
-    try:
-        import pandas as pd
-        import openpyxl
-    except ImportError as e:
-        print("❌ Error: Asegúrate de tener instaladas las bibliotecas necesarias:")
-        print("pip install pandas openpyxl")
-        exit(1)
-    
-    # Primero verificar los patrones de archivos
-    verificar_patron_archivos()
-    
-    print("\n" + "="*50)
-    print("📋 Iniciando procesamiento...")
-    print("="*50)
-    
-    # Ejecutar el procesamiento
-    procesar_archivos_mes_octubre_con_consolidado()
-
+    # Para ejecutar la versión rápida, descomenta la línea siguiente:
+    # unificar_archivos_ir_rapido()
