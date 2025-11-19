@@ -2,21 +2,30 @@ import pandas as pd
 import os
 from datetime import datetime
 
-def consolidar_reportes_cftc(archivo_entrada, archivo_salida):
+def consolidar_reportes_cftc(ruta_archivo_entrada, ruta_salida=None):
     """
     Consolida todas las hojas Dia_XX del archivo CFTC en una sola hoja ordenada por fecha
     """
     try:
+        # Verificar si el archivo existe
+        if not os.path.exists(ruta_archivo_entrada):
+            print(f"❌ Error: No se encuentra el archivo en la ruta: {ruta_archivo_entrada}")
+            return None
+        
+        print(f"📁 Leyendo archivo: {ruta_archivo_entrada}")
+        
         # Leer el archivo Excel
-        xls = pd.ExcelFile(archivo_entrada)
+        xls = pd.ExcelFile(ruta_archivo_entrada)
         
         # Lista para almacenar todos los DataFrames
         todos_los_datos = []
         
-        # Diccionario para mapear nombres de hoja a fechas
-        hoja_a_fecha = {}
+        # Contadores para estadísticas
+        hojas_procesadas = 0
+        hojas_con_errores = 0
+        total_registros = 0
         
-        print("Procesando hojas...")
+        print("🔄 Procesando hojas...")
         
         # Procesar cada hoja que comience con "Dia_"
         for hoja in xls.sheet_names:
@@ -25,88 +34,139 @@ def consolidar_reportes_cftc(archivo_entrada, archivo_salida):
                     # Extraer el número del día
                     num_dia = hoja.split('_')[1]
                     
+                    print(f"   Procesando {hoja}...", end=" ")
+                    
                     # Leer la hoja, saltando las primeras 2 filas que son encabezados
                     df = pd.read_excel(xls, sheet_name=hoja, skiprows=2)
                     
-                    if not df.empty:
-                        # Extraer la fecha del reporte desde la segunda fila
+                    if not df.empty and len(df.columns) > 1:
+                        # Extraer la fecha del reporte desde las primeras filas
                         fecha_reporte = None
                         try:
-                            # Leer las primeras filas para obtener la fecha
-                            df_info = pd.read_excel(xls, sheet_name=hoja, nrows=2, header=None)
+                            # Leer las primeras 3 filas para obtener la fecha
+                            df_info = pd.read_excel(xls, sheet_name=hoja, nrows=3, header=None)
+                            
+                            # Buscar la fila que contiene "Report Date"
                             for idx, row in df_info.iterrows():
                                 for cell in row:
                                     if isinstance(cell, str) and 'Report Date' in cell:
                                         # Extraer fecha del formato "Report Date 2025-10-01"
-                                        partes = cell.split('Report Date')
-                                        if len(partes) > 1:
-                                            fecha_str = partes[1].strip().split(' ')[0]
-                                            fecha_reporte = datetime.strptime(fecha_str, '%Y-%m-%d')
-                                            break
+                                        try:
+                                            # Buscar el patrón de fecha YYYY-MM-DD
+                                            import re
+                                            fecha_match = re.search(r'(\d{4}-\d{2}-\d{2})', cell)
+                                            if fecha_match:
+                                                fecha_str = fecha_match.group(1)
+                                                fecha_reporte = datetime.strptime(fecha_str, '%Y-%m-%d')
+                                                break
+                                        except:
+                                            pass
                                 if fecha_reporte:
                                     break
-                        except:
-                            # Si no podemos extraer la fecha, usar el número del día
-                            fecha_reporte = datetime(2025, 10, int(num_dia))
+                        except Exception as e:
+                            print(f"Error extrayendo fecha: {str(e)}")
                         
-                        # Agregar columna de fecha
+                        # Si no se pudo extraer la fecha, usar el número del día
+                        if not fecha_reporte:
+                            try:
+                                fecha_reporte = datetime(2025, 10, int(num_dia))
+                                print(f"(Fecha inferida)", end=" ")
+                            except:
+                                fecha_reporte = datetime(2025, 10, 1)
+                                print(f"(Fecha por defecto)", end=" ")
+                        
+                        # Agregar columnas de identificación
                         df['Fecha_Reporte'] = fecha_reporte
                         df['Dia'] = f"Dia_{num_dia}"
+                        df['Hoja_Origen'] = hoja
                         
-                        # Guardar en diccionario para referencia
-                        hoja_a_fecha[hoja] = fecha_reporte
+                        # Limpiar columnas completamente vacías
+                        df = df.dropna(axis=1, how='all')
                         
                         todos_los_datos.append(df)
-                        print(f"✓ {hoja}: {len(df)} registros - Fecha: {fecha_reporte.strftime('%Y-%m-%d')}")
+                        registros_hoja = len(df)
+                        total_registros += registros_hoja
+                        hojas_procesadas += 1
+                        print(f"✅ {registros_hoja} registros - Fecha: {fecha_reporte.strftime('%d/%m/%Y')}")
                     else:
-                        print(f"✗ {hoja}: Vacía")
+                        hojas_con_errores += 1
+                        print(f"❌ Vacía o sin datos válidos")
                         
                 except Exception as e:
-                    print(f"✗ Error procesando {hoja}: {str(e)}")
+                    hojas_con_errores += 1
+                    print(f"❌ Error: {str(e)}")
         
         if not todos_los_datos:
-            print("No se encontraron datos para consolidar")
-            return
+            print("❌ No se encontraron datos válidos para consolidar")
+            return None
         
         # Consolidar todos los datos
-        print("\nConsolidando datos...")
-        df_consolidado = pd.concat(todos_los_datos, ignore_index=True)
+        print(f"\n🔄 Consolidando {len(todos_los_datos)} hojas con {total_registros} registros...")
+        df_consolidado = pd.concat(todos_los_datos, ignore_index=True, sort=False)
         
         # Ordenar por fecha de reporte
         df_consolidado = df_consolidado.sort_values('Fecha_Reporte').reset_index(drop=True)
         
+        # Generar nombre de archivo de salida si no se proporciona
+        if not ruta_salida:
+            directorio = os.path.dirname(ruta_archivo_entrada)
+            nombre_base = os.path.splitext(os.path.basename(ruta_archivo_entrada))[0]
+            ruta_salida = os.path.join(directorio, f"{nombre_base}_CONSOLIDADO.xlsx")
+        
         # Crear archivo Excel de salida
-        with pd.ExcelWriter(archivo_salida, engine='openpyxl') as writer:
-            # Hoja consolidada
+        print(f"💾 Guardando archivo consolidado: {ruta_salida}")
+        with pd.ExcelWriter(ruta_salida, engine='openpyxl') as writer:
+            # Hoja consolidada (principal)
             df_consolidado.to_excel(writer, sheet_name='CONSOLIDADO', index=False)
             
             # Hoja de resumen por día
-            resumen = df_consolidado.groupby(['Dia', 'Fecha_Reporte']).size().reset_index(name='Cantidad_Registros')
+            resumen = df_consolidado.groupby(['Dia', 'Fecha_Reporte', 'Hoja_Origen']).size().reset_index(name='Cantidad_Registros')
             resumen = resumen.sort_values('Fecha_Reporte')
-            resumen.to_excel(writer, sheet_name='RESUMEN', index=False)
+            resumen.to_excel(writer, sheet_name='RESUMEN_DIARIO', index=False)
+            
+            # Hoja de estadísticas
+            stats_data = {
+                'Métrica': [
+                    'Archivo Origen',
+                    'Total Hojas Procesadas',
+                    'Hojas con Errores',
+                    'Total Registros Consolidados',
+                    'Período Cubierto',
+                    'Fecha de Consolidación'
+                ],
+                'Valor': [
+                    os.path.basename(ruta_archivo_entrada),
+                    hojas_procesadas,
+                    hojas_con_errores,
+                    len(df_consolidado),
+                    f"{df_consolidado['Fecha_Reporte'].min().strftime('%d/%m/%Y')} a {df_consolidado['Fecha_Reporte'].max().strftime('%d/%m/%Y')}",
+                    datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+                ]
+            }
+            df_stats = pd.DataFrame(stats_data)
+            df_stats.to_excel(writer, sheet_name='ESTADISTICAS', index=False)
             
             # Ajustar anchos de columna para mejor visualización
-            workbook = writer.book
-            worksheet = writer.sheets['CONSOLIDADO']
-            
-            # Ajustar anchos automáticamente
-            for column in worksheet.columns:
-                max_length = 0
-                column_letter = column[0].column_letter
-                for cell in column:
-                    try:
-                        if len(str(cell.value)) > max_length:
-                            max_length = len(str(cell.value))
-                    except:
-                        pass
-                adjusted_width = min(max_length + 2, 50)
-                worksheet.column_dimensions[column_letter].width = adjusted_width
+            for sheet_name in writer.sheets:
+                worksheet = writer.sheets[sheet_name]
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
         
-        print(f"\n✅ Consolidación completada:")
-        print(f"   - Total de registros: {len(df_consolidado):,}")
-        print(f"   - Período: {df_consolidado['Fecha_Reporte'].min().strftime('%d/%m/%Y')} a {df_consolidado['Fecha_Reporte'].max().strftime('%d/%m/%Y')}")
-        print(f"   - Días procesados: {len(resumen)}")
-        print(f"   - Archivo guardado: {archivo_salida}")
+        print(f"\n✅ Consolidación completada exitosamente!")
+        print(f"   📊 Hojas procesadas: {hojas_procesadas}")
+        print(f"   ⚠️  Hojas con errores: {hojas_con_errores}")
+        print(f"   📈 Total registros: {len(df_consolidado):,}")
+        print(f"   📅 Período: {df_consolidado['Fecha_Reporte'].min().strftime('%d/%m/%Y')} a {df_consolidado['Fecha_Reporte'].max().strftime('%d/%m/%Y')}")
+        print(f"   💾 Archivo guardado: {ruta_salida}")
         
         return df_consolidado
         
@@ -116,14 +176,14 @@ def consolidar_reportes_cftc(archivo_entrada, archivo_salida):
 
 def generar_reporte_detallado(df_consolidado):
     """
-    Genera un reporte detallado de la consolidación
+    Genera un reporte detallado de la consolidación en consola
     """
     if df_consolidado is None:
         return
     
-    print("\n" + "="*60)
+    print("\n" + "="*70)
     print("REPORTE DETALLADO DE CONSOLIDACIÓN")
-    print("="*60)
+    print("="*70)
     
     # Resumen por día
     resumen_dias = df_consolidado.groupby(['Dia', 'Fecha_Reporte']).size().reset_index(name='Registros')
@@ -131,31 +191,43 @@ def generar_reporte_detallado(df_consolidado):
     
     print("\n📊 REGISTROS POR DÍA:")
     for _, row in resumen_dias.iterrows():
-        print(f"   {row['Dia']} ({row['Fecha_Reporte'].strftime('%d/%m/%Y')}): {row['Registros']} registros")
+        print(f"   {row['Dia']} ({row['Fecha_Reporte'].strftime('%d/%m/%Y')}): {row['Registros']:>4} registros")
     
     # Resumen por estado GTR
     if 'GTR Validation Status' in df_consolidado.columns:
         print(f"\n📈 ESTADOS GTR:")
         estados = df_consolidado['GTR Validation Status'].value_counts()
         for estado, cantidad in estados.items():
-            print(f"   {estado}: {cantidad} registros")
+            porcentaje = (cantidad / len(df_consolidado)) * 100
+            print(f"   {estado:<10}: {cantidad:>4} registros ({porcentaje:.1f}%)")
     
     # Resumen por Asset Class
     if 'Primary Asset Class' in df_consolidado.columns:
         print(f"\n🏦 ASSET CLASS:")
         asset_classes = df_consolidado['Primary Asset Class'].value_counts()
         for asset, cantidad in asset_classes.items():
-            print(f"   {asset}: {cantidad} registros")
+            if pd.notna(asset):
+                porcentaje = (cantidad / len(df_consolidado)) * 100
+                print(f"   {asset:<15}: {cantidad:>4} registros ({porcentaje:.1f}%)")
 
 # Uso del código
 if __name__ == "__main__":
-    # Configurar rutas
-    archivo_entrada = "Consolidado_OctubreCR_2025.xlsx"
-    archivo_salida = "CFTC_Consolidado_Completo.xlsx"
+    # Configurar rutas específicas para tu entorno
+    ruta_base = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre"
+    archivo_entrada = os.path.join(ruta_base, "Consolidado_OctubreCR_2025.xlsx")
     
-    # Ejecutar consolidación
-    df_resultado = consolidar_reportes_cftc(archivo_entrada, archivo_salida)
-    
-    # Generar reporte detallado
-    if df_resultado is not None:
-        generar_reporte_detallado(df_resultado)
+    # Verificar acceso a la ruta
+    if not os.path.exists(ruta_base):
+        print(f"❌ No se puede acceder a la ruta: {ruta_base}")
+        print("   Verifica la conexión de red y los permisos de acceso")
+    else:
+        print(f"✅ Ruta accesible: {ruta_base}")
+        
+        # Ejecutar consolidación
+        df_resultado = consolidar_reportes_cftc(archivo_entrada)
+        
+        # Generar reporte detallado
+        if df_resultado is not None:
+            generar_reporte_detallado(df_resultado)
+        
+        print(f"\n🎯 Proceso completado. El archivo consolidado se encuentra en la misma carpeta.")
