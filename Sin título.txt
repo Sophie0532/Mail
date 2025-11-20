@@ -1,215 +1,57 @@
-import pandas as pd
 import os
-from datetime import datetime
+import glob
+import gzip
+import pandas as pd
+from io import StringIO
 
-def diagnostico_archivo_cftc(ruta_directorio, nombre_archivo):
-    """
-    Función de diagnóstico para entender la estructura real del archivo
-    """
-    ruta_completa = os.path.join(ruta_directorio, nombre_archivo)
-    
-    print("🔍 INICIANDO DIAGNÓSTICO DEL ARCHIVO")
-    print("=" * 60)
-    
-    if not os.path.exists(ruta_completa):
-        print(f"❌ El archivo no existe: {ruta_completa}")
-        return
-    
+# Ruta base donde se encuentran las carpetas diarias
+ruta_base = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre"
+
+# Lista para almacenar los DataFrames de cada archivo
+dfs = []
+
+# Generar los nombres de las carpetas diarias (01.10 a 31.10)
+dias = [f"{i:02d}.10" for i in range(1, 32)]
+
+for dia in dias:
+    carpeta_dia = os.path.join(ruta_base, dia)
+    if not os.path.exists(carpeta_dia):
+        print(f"Advertencia: La carpeta {carpeta_dia} no existe. Se omite.")
+        continue
+
+    # Buscar archivos que coincidan con el patrón
+    patron_archivo = os.path.join(carpeta_dia, "CFTC_FX_SubmissionReport_*en-5STB.csv.gz")
+    archivos = glob.glob(patron_archivo)
+
+    if not archivos:
+        print(f"Advertencia: No se encontró archivo en {carpeta_dia}. Se omite.")
+        continue
+    if len(archivos) > 1:
+        print(f"Advertencia: Múltiples archivos en {carpeta_dia}. Se usará el primero.")
+
+    archivo_gz = archivos[0]
+    print(f"Procesando: {archivo_gz}")
+
     try:
-        # Leer el archivo Excel
-        xls = pd.ExcelFile(ruta_completa)
+        with gzip.open(archivo_gz, 'rt', encoding='utf-8') as f:
+            lineas = f.readlines()
         
-        print(f"📊 Hojas encontradas: {len(xls.sheet_names)}")
-        print(f"📋 Nombres de hojas: {xls.sheet_names}")
-        
-        # Analizar cada hoja que comience con "Dia_"
-        for hoja in xls.sheet_names:
-            if hoja.startswith('Dia_'):
-                print(f"\n{'='*50}")
-                print(f"📖 ANALIZANDO HOJA: {hoja}")
-                print(f"{'='*50}")
-                
-                # Estrategia 1: Leer sin saltar filas para ver estructura real
-                try:
-                    df_raw = pd.read_excel(xls, sheet_name=hoja, header=None)
-                    print(f"📐 Dimensiones: {df_raw.shape} (filas x columnas)")
-                    
-                    if df_raw.empty:
-                        print("❌ Hoja completamente vacía")
-                        continue
-                    
-                    print(f"📝 Primeras 5 filas RAW:")
-                    for i in range(min(5, len(df_raw))):
-                        fila = df_raw.iloc[i].dropna()  # Eliminar valores NaN
-                        if len(fila) > 0:
-                            print(f"   Fila {i}: {list(fila.values)}")
-                        else:
-                            print(f"   Fila {i}: [VACÍA]")
-                    
-                    # Buscar patrones de datos
-                    print(f"\n🔎 Buscando patrones de datos...")
-                    
-                    # Buscar encabezados comunes
-                    encabezados_comunes = ['Trade ID', 'Message Type', 'GTR Validation Status', 'Report Date']
-                    for i in range(min(10, len(df_raw))):
-                        fila = df_raw.iloc[i]
-                        for j, cell in enumerate(fila):
-                            if pd.notna(cell) and any(header in str(cell) for header in encabezados_comunes):
-                                print(f"   ✅ Posible encabezado en fila {i}, columna {j}: '{cell}'")
-                    
-                    # Verificar si hay datos después de ciertas filas
-                    for skip_rows in [0, 1, 2, 3, 4, 5]:
-                        try:
-                            df_test = pd.read_excel(xls, sheet_name=hoja, skiprows=skip_rows)
-                            if not df_test.empty and len(df_test.columns) > 1:
-                                print(f"   ✅ Con skiprows={skip_rows}: {len(df_test)} filas, {len(df_test.columns)} columnas")
-                                # Mostrar nombres de columnas
-                                print(f"      Columnas: {list(df_test.columns)}")
-                        except Exception as e:
-                            print(f"   ❌ Con skiprows={skip_rows}: Error - {str(e)}")
-                            
-                except Exception as e:
-                    print(f"❌ Error leyendo hoja {hoja}: {str(e)}")
-    
-    except Exception as e:
-        print(f"❌ Error general: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        if len(lineas) < 3:
+            print(f"Advertencia: El archivo {archivo_gz} tiene menos de 3 líneas. Se omite.")
+            continue
 
-def consolidar_reportes_cftc_simple(ruta_directorio, nombre_archivo_entrada, nombre_archivo_salida):
-    """
-    Versión simple que adapta la lectura basada en el diagnóstico
-    """
-    try:
-        ruta_completa_entrada = os.path.join(ruta_directorio, nombre_archivo_entrada)
-        ruta_completa_salida = os.path.join(ruta_directorio, nombre_archivo_salida)
-        
-        print(f"🚀 INICIANDO CONSOLIDACIÓN SIMPLIFICADA")
-        print(f"📁 Archivo: {ruta_completa_entrada}")
-        
-        if not os.path.exists(ruta_completa_entrada):
-            print(f"❌ Archivo no encontrado")
-            return None
-        
-        xls = pd.ExcelFile(ruta_completa_entrada)
-        todos_los_datos = []
-        
-        print(f"\n📊 Procesando {len([h for h in xls.sheet_names if h.startswith('Dia_')])} hojas...")
-        
-        for hoja in xls.sheet_names:
-            if hoja.startswith('Dia_'):
-                try:
-                    num_dia = hoja.split('_')[1]
-                    
-                    # PRIMERO: Intentar diferentes estrategias de lectura
-                    df = None
-                    
-                    # Estrategia 1: Saltar 0 filas
-                    try:
-                        df_test = pd.read_excel(xls, sheet_name=hoja, skiprows=0)
-                        if not df_test.empty and len(df_test.columns) > 1:
-                            df = df_test
-                            print(f"✅ {hoja}: Leído con skiprows=0 - {len(df)} registros")
-                    except:
-                        pass
-                    
-                    # Estrategia 2: Saltar 2 filas (la original)
-                    if df is None:
-                        try:
-                            df_test = pd.read_excel(xls, sheet_name=hoja, skiprows=2)
-                            if not df_test.empty and len(df_test.columns) > 1:
-                                df = df_test
-                                print(f"✅ {hoja}: Leído con skiprows=2 - {len(df)} registros")
-                        except:
-                            pass
-                    
-                    # Estrategia 3: Saltar 1 fila
-                    if df is None:
-                        try:
-                            df_test = pd.read_excel(xls, sheet_name=hoja, skiprows=1)
-                            if not df_test.empty and len(df_test.columns) > 1:
-                                df = df_test
-                                print(f"✅ {hoja}: Leído con skiprows=1 - {len(df)} registros")
-                        except:
-                            pass
-                    
-                    # Estrategia 4: Leer sin header
-                    if df is None:
-                        try:
-                            df_test = pd.read_excel(xls, sheet_name=hoja, header=None)
-                            if not df_test.empty and len(df_test.columns) > 1:
-                                df = df_test
-                                print(f"✅ {hoja}: Leído sin header - {len(df)} registros")
-                        except:
-                            pass
-                    
-                    if df is not None and not df.empty:
-                        # Extraer fecha
-                        try:
-                            fecha_reporte = datetime(2025, 10, int(num_dia))
-                        except:
-                            fecha_reporte = datetime(2025, 10, 1)
-                        
-                        # Agregar columnas de identificación
-                        df['Fecha_Reporte'] = fecha_reporte
-                        df['Dia_Hoja'] = hoja
-                        df['Dia_Numero'] = num_dia.zfill(2)
-                        
-                        todos_los_datos.append(df)
-                    else:
-                        print(f"❌ {hoja}: No se pudieron leer datos")
-                        
-                except Exception as e:
-                    print(f"❌ Error en {hoja}: {str(e)}")
-        
-        if not todos_los_datos:
-            print("\n❌ No se encontraron datos válidos")
-            return None
-        
-        # Consolidar
-        df_consolidado = pd.concat(todos_los_datos, ignore_index=True)
-        
-        # Guardar
-        with pd.ExcelWriter(ruta_completa_salida, engine='openpyxl') as writer:
-            df_consolidado.to_excel(writer, sheet_name='CONSOLIDADO', index=False)
-        
-        print(f"\n🎉 CONSOLIDACIÓN EXITOSA!")
-        print(f"📊 Total registros: {len(df_consolidado)}")
-        print(f"💾 Archivo guardado: {ruta_completa_salida}")
-        
-        return df_consolidado
-        
+        # Saltar las dos primeras líneas y usar la tercera como encabezado
+        contenido_csv = ''.join(lineas[2:])
+        df = pd.read_csv(StringIO(contenido_csv), quotechar='"', sep=',', encoding='utf-8')
+        dfs.append(df)
     except Exception as e:
-        print(f"❌ Error general: {str(e)}")
-        return None
+        print(f"Error al procesar {archivo_gz}: {str(e)}")
 
-# EJECUCIÓN PRINCIPAL
-if __name__ == "__main__":
-    # Configuración
-    RUTA_BASE = r"\\v32ev13.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\19. Octubre"
-    ARCHIVO_ENTRADA = "Consolidado_OctubreCR_2025.xlsx"
-    ARCHIVO_SALIDA = "CFTC_Consolidado_Final.xlsx"
-    
-    print("=" * 70)
-    print("🔧 HERRAMIENTA DE DIAGNÓSTICO Y CONSOLIDACIÓN CFTC")
-    print("=" * 70)
-    
-    # PRIMERO: Ejecutar diagnóstico
-    diagnostico_archivo_cftc(RUTA_BASE, ARCHIVO_ENTRADA)
-    
-    print("\n" + "=" * 70)
-    print("🔄 INICIANDO CONSOLIDACIÓN...")
-    print("=" * 70)
-    
-    # LUEGO: Intentar consolidación
-    df_resultado = consolidar_reportes_cftc_simple(RUTA_BASE, ARCHIVO_ENTRADA, ARCHIVO_SALIDA)
-    
-    if df_resultado is not None:
-        print(f"\n✅ PROCESO COMPLETADO EXITOSAMENTE")
-        print(f"📍 Archivo consolidado: {os.path.join(RUTA_BASE, ARCHIVO_SALIDA)}")
-    else:
-        print(f"\n❌ NO SE PUDO COMPLETAR LA CONSOLIDACIÓN")
-        print(f"💡 Recomendaciones:")
-        print(f"   1. Verificar manualmente el archivo Excel")
-        print(f"   2. Revisar si las hojas contienen datos reales")
-        print(f"   3. Contactar al proveedor del archivo para verificar el formato")
+# Combinar todos los DataFrames
+if dfs:
+    df_combinado = pd.concat(dfs, ignore_index=True)
+    ruta_salida = os.path.join(ruta_base, "CFTC_FX_SubmissionReport_Combinado.csv")
+    df_combinado.to_csv(ruta_salida, index=False)
+    print(f"¡Combinación completada! Archivo guardado en: {ruta_salida}")
+else:
+    print("No se encontraron datos válidos para combinar.")
