@@ -2,9 +2,11 @@ Ratio Month vs UTI DFA Y =
 DIVIDE(
     SUM ( 'Average Monthly'[Month] ),
     CALCULATE(
-        SUM ( 'Tablon Dailu Mark'[UTI] ),
-        'Tablon Dailu Mark'[DFA_IND] = "Y"
-    )
+        SUM ( 'Tablon Daily Mark'[UTI] ),
+        'Tablon Daily Mark'[DFA_IND] = "Y"
+    ),
+    0
 )
+
 
 
