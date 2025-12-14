@@ -1,57 +1,10 @@
-import os
-import glob
-import gzip
-import pandas as pd
-from io import StringIO
+Ratio Month vs UTI DFA Y =
+DIVIDE(
+    SUM ( 'Average Monthly'[Month] ),
+    CALCULATE(
+        SUM ( 'Tablon Dailu Mark'[UTI] ),
+        'Tablon Dailu Mark'[DFA_IND] = "Y"
+    )
+)
 
-# Ruta base donde se encuentran las carpetas diarias
-ruta_base = r"\\v2sevi3.san.corp\Factory\REGULATORIO MERCADOS\FICHEROS DTCC PORTAL EU\DFA\2025\10. Octubre"
 
-# Lista para almacenar los DataFrames de cada archivo
-dfs = []
-
-# Generar los nombres de las carpetas diarias (01.10 a 31.10)
-dias = [f"{i:02d}.10" for i in range(1, 32)]
-
-for dia in dias:
-    carpeta_dia = os.path.join(ruta_base, dia)
-    if not os.path.exists(carpeta_dia):
-        print(f"Advertencia: La carpeta {carpeta_dia} no existe. Se omite.")
-        continue
-
-    # Buscar archivos que coincidan con el patrón
-    patron_archivo = os.path.join(carpeta_dia, "CFTC_FX_SubmissionReport_*en-5STB.csv.gz")
-    archivos = glob.glob(patron_archivo)
-
-    if not archivos:
-        print(f"Advertencia: No se encontró archivo en {carpeta_dia}. Se omite.")
-        continue
-    if len(archivos) > 1:
-        print(f"Advertencia: Múltiples archivos en {carpeta_dia}. Se usará el primero.")
-
-    archivo_gz = archivos[0]
-    print(f"Procesando: {archivo_gz}")
-
-    try:
-        with gzip.open(archivo_gz, 'rt', encoding='utf-8') as f:
-            lineas = f.readlines()
-        
-        if len(lineas) < 3:
-            print(f"Advertencia: El archivo {archivo_gz} tiene menos de 3 líneas. Se omite.")
-            continue
-
-        # Saltar las dos primeras líneas y usar la tercera como encabezado
-        contenido_csv = ''.join(lineas[2:])
-        df = pd.read_csv(StringIO(contenido_csv), quotechar='"', sep=',', encoding='utf-8')
-        dfs.append(df)
-    except Exception as e:
-        print(f"Error al procesar {archivo_gz}: {str(e)}")
-
-# Combinar todos los DataFrames
-if dfs:
-    df_combinado = pd.concat(dfs, ignore_index=True)
-    ruta_salida = os.path.join(ruta_base, "CFTC_FX_SubmissionReport_Combinado.csv")
-    df_combinado.to_csv(ruta_salida, index=False)
-    print(f"¡Combinación completada! Archivo guardado en: {ruta_salida}")
-else:
-    print("No se encontraron datos válidos para combinar.")
