@@ -321,3 +321,51 @@ def comparar_archivos():
 if __name__ == "__main__":
     comparar_archivos()
     input("\nPresiona Enter para salir...")
+
+
+
+IC_EOD_Extract
+Original ID
+Agreement Date
+Maturity Date
+Status
+Quantity
+Leg1 Notional
+Leg1 currency
+Leg1 price
+Leg2 Notional
+Leg2 currency
+Leg2 price
+Underlying
+Counterparty
+Direction
+Product
+UTI
+Prior UTI
+
+PHOENIX
+ACTION_IND
+ORIGINAL_ID
+CONTRACT_ID
+SANTANDER_GLCS
+BRANCH
+CPTY_GLCS
+TRADE_DATE
+MATURITY_DATE_LEG_1
+MATURITY_DATE_LEG_2
+NOMINAL1_LEG1
+NOMINAL1_LEG2
+EVENT_TYPE
+EVENT_IND
+STATUS
+UTI_1
+UTI_2
+PRIOR_UTI_1
+PRIOR_UTI_2
+PRODUCT
+RATE_LEG_1
+RATE_LEG_2
+UPI
+UPI2
+
+
