@@ -404,3 +404,503 @@ NOMINAL1_LEG2
 RATE_LEG_1		
 RATE_LEG_2		
 
+
+
+--____----------------- --------- ------------- -------------------
+
+import pandas as pd
+import tkinter as tk
+from tkinter import filedialog, messagebox
+from datetime import datetime
+import os
+
+# =========================================================
+# CONFIGURATION
+# =========================================================
+
+PHX_SUFFIX = "_SWAPONE_SWAPSWAPONEEQSWP"
+
+# =========================================================
+# HELPERS
+# =========================================================
+
+def clean_string(value):
+
+    if pd.isna(value):
+        return ""
+
+    return (
+        str(value)
+        .upper()
+        .strip()
+        .replace(" ", "")
+    )
+
+
+def clean_ic_date(value):
+
+    if pd.isna(value):
+        return None
+
+    try:
+        return pd.to_datetime(
+            value,
+            dayfirst=True,
+            errors="coerce"
+        ).date()
+    except:
+        return None
+
+
+def clean_phx_date(value):
+
+    if pd.isna(value):
+        return None
+
+    try:
+        return pd.to_datetime(
+            value,
+            errors="coerce"
+        ).date()
+    except:
+        return None
+
+
+def compare_values(ic_value, phx_value):
+
+    ic_null = ic_value in ["", None]
+    phx_null = phx_value in ["", None]
+
+    if ic_null and phx_null:
+        return True
+
+    return ic_value == phx_value
+
+
+# =========================================================
+# NORMALIZATION
+# =========================================================
+
+def normalize_ic(df):
+
+    df.columns = (
+        df.columns
+        .str.strip()
+        .str.upper()
+        .str.replace(" ", "_")
+    )
+
+    df["ORIGINAL_ID"] = (
+        df["ORIGINAL_ID"]
+        .astype(str)
+        .str.strip()
+    )
+
+    df["MATURITY_DATE"] = (
+        df["MATURITY_DATE"]
+        .apply(clean_ic_date)
+    )
+
+    df["STATUS"] = (
+        df["STATUS"]
+        .apply(clean_string)
+    )
+
+    df["COUNTERPARTY"] = (
+        df["COUNTERPARTY"]
+        .apply(clean_string)
+    )
+
+    df["PRODUCT"] = (
+        df["PRODUCT"]
+        .apply(clean_string)
+    )
+
+    df["UTI"] = (
+        df["UTI"]
+        .apply(clean_string)
+    )
+
+    return df
+
+
+def normalize_phx(df):
+
+    df.columns = (
+        df.columns
+        .str.strip()
+        .str.upper()
+    )
+
+    df["ORIGINAL_ID"] = (
+        df["ORIGINAL_ID"]
+        .astype(str)
+        .str.replace(PHX_SUFFIX, "", regex=False)
+        .str.strip()
+    )
+
+    df["MATURITY_DATE_LEG_1"] = (
+        df["MATURITY_DATE_LEG_1"]
+        .apply(clean_phx_date)
+    )
+
+    df["STATUS"] = (
+        df["STATUS"]
+        .apply(clean_string)
+    )
+
+    df["CPTY_GLCS"] = (
+        df["CPTY_GLCS"]
+        .apply(clean_string)
+    )
+
+    df["PRODUCT"] = (
+        df["PRODUCT"]
+        .apply(clean_string)
+    )
+
+    df["UTI_1"] = (
+        df["UTI_1"]
+        .apply(clean_string)
+    )
+
+    return df
+
+
+# =========================================================
+# RECONCILIATION
+# =========================================================
+
+def reconcile(df_ic, df_phx):
+
+    merged = pd.merge(
+        df_ic,
+        df_phx,
+        on="ORIGINAL_ID",
+        how="outer",
+        indicator=True,
+        suffixes=("_IC", "_PHX")
+    )
+
+    breaks = []
+    missing_in_phx = []
+    extra_in_phx = []
+
+    matched_count = 0
+
+    for _, row in merged.iterrows():
+
+        original_id = row["ORIGINAL_ID"]
+
+        merge_flag = row["_merge"]
+
+        # =================================================
+        # MISSING IN PHX
+        # =================================================
+
+        if merge_flag == "left_only":
+
+            missing_in_phx.append({
+                "ORIGINAL_ID": original_id,
+                "ISSUE": "Missing in PHOENIX"
+            })
+
+            continue
+
+        # =================================================
+        # EXTRA IN PHX
+        # =================================================
+
+        if merge_flag == "right_only":
+
+            extra_in_phx.append({
+                "ORIGINAL_ID": original_id,
+                "ISSUE": "Extra in PHOENIX"
+            })
+
+            continue
+
+        row_breaks = []
+
+        comparisons = [
+
+            (
+                "MATURITY_DATE",
+                row["MATURITY_DATE"],
+                row["MATURITY_DATE_LEG_1"]
+            ),
+
+            (
+                "STATUS",
+                row["STATUS_IC"],
+                row["STATUS_PHX"]
+            ),
+
+            (
+                "COUNTERPARTY",
+                row["COUNTERPARTY"],
+                row["CPTY_GLCS"]
+            ),
+
+            (
+                "PRODUCT",
+                row["PRODUCT_IC"],
+                row["PRODUCT_PHX"]
+            ),
+
+            (
+                "UTI",
+                row["UTI"],
+                row["UTI_1"]
+            )
+
+        ]
+
+        for field_name, ic_value, phx_value in comparisons:
+
+            if not compare_values(ic_value, phx_value):
+
+                row_breaks.append({
+                    "ORIGINAL_ID": original_id,
+                    "FIELD": field_name,
+                    "IC_VALUE": ic_value,
+                    "PHX_VALUE": phx_value,
+                    "BREAK_TYPE": "VALUE_MISMATCH"
+                })
+
+        if len(row_breaks) > 0:
+            breaks.extend(row_breaks)
+        else:
+            matched_count += 1
+
+    summary = pd.DataFrame([{
+        "TOTAL_IC": len(df_ic),
+        "TOTAL_PHOENIX": len(df_phx),
+        "MATCHED": matched_count,
+        "BREAKS": len(breaks),
+        "MISSING_IN_PHX": len(missing_in_phx),
+        "EXTRA_IN_PHX": len(extra_in_phx)
+    }])
+
+    return (
+        summary,
+        pd.DataFrame(breaks),
+        pd.DataFrame(missing_in_phx),
+        pd.DataFrame(extra_in_phx)
+    )
+
+
+# =========================================================
+# MAIN EXECUTION
+# =========================================================
+
+def run_reconciliation():
+
+    try:
+
+        # =================================================
+        # SELECT FOLDER
+        # =================================================
+
+        folder_path = filedialog.askdirectory(
+            title="Select folder containing IC_EOD and PHOENIX files"
+        )
+
+        if not folder_path:
+            return
+
+        # =================================================
+        # SEARCH FILES
+        # =================================================
+
+        files = os.listdir(folder_path)
+
+        ic_file = None
+        phx_file = None
+
+        for file in files:
+
+            upper_file = file.upper()
+
+            if "IC_EOD" in upper_file and file.endswith(".csv"):
+                ic_file = os.path.join(folder_path, file)
+
+            elif "PHOENIX" in upper_file and file.endswith(".csv"):
+                phx_file = os.path.join(folder_path, file)
+
+        # =================================================
+        # VALIDATION
+        # =================================================
+
+        if not ic_file:
+            messagebox.showerror(
+                "Error",
+                "IC_EOD file not found in selected folder"
+            )
+            return
+
+        if not phx_file:
+            messagebox.showerror(
+                "Error",
+                "PHOENIX file not found in selected folder"
+            )
+            return
+
+        # =================================================
+        # LOAD FILES
+        # =================================================
+
+        df_ic = pd.read_csv(ic_file)
+
+        df_phx = pd.read_csv(
+            phx_file,
+            sep=";",
+            quotechar='"'
+        )
+
+        # =================================================
+        # NORMALIZE
+        # =================================================
+
+        df_ic = normalize_ic(df_ic)
+
+        df_phx = normalize_phx(df_phx)
+
+        # =================================================
+        # REMOVE DUPLICATES
+        # =================================================
+
+        df_phx = (
+            df_phx
+            .sort_values("TRADE_DATE")
+            .drop_duplicates(
+                subset="ORIGINAL_ID",
+                keep="last"
+            )
+        )
+
+        # =================================================
+        # RECONCILIATION
+        # =================================================
+
+        (
+            summary,
+            breaks_df,
+            missing_df,
+            extra_df
+        ) = reconcile(df_ic, df_phx)
+
+        # =================================================
+        # OUTPUT
+        # =================================================
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        output_file = os.path.join(
+            folder_path,
+            f"RECONCILIATION_{timestamp}.xlsx"
+        )
+
+        with pd.ExcelWriter(
+            output_file,
+            engine="openpyxl"
+        ) as writer:
+
+            summary.to_excel(
+                writer,
+                sheet_name="SUMMARY",
+                index=False
+            )
+
+            breaks_df.to_excel(
+                writer,
+                sheet_name="BREAKS_DETAIL",
+                index=False
+            )
+
+            missing_df.to_excel(
+                writer,
+                sheet_name="MISSING_IN_PHX",
+                index=False
+            )
+
+            extra_df.to_excel(
+                writer,
+                sheet_name="EXTRA_IN_PHX",
+                index=False
+            )
+
+        # =================================================
+        # SUCCESS MESSAGE
+        # =================================================
+
+        messagebox.showinfo(
+            "Reconciliation Completed",
+            f"""
+Reconciliation completed successfully
+
+Output file:
+{output_file}
+
+SUMMARY
+------------------------
+Matched: {summary['MATCHED'][0]}
+Breaks: {summary['BREAKS'][0]}
+Missing in PHX: {summary['MISSING_IN_PHX'][0]}
+Extra in PHX: {summary['EXTRA_IN_PHX'][0]}
+"""
+        )
+
+    except Exception as e:
+
+        messagebox.showerror(
+            "Execution Error",
+            str(e)
+        )
+
+
+# =========================================================
+# UI
+# =========================================================
+
+root = tk.Tk()
+
+root.title("IC vs PHOENIX Reconciliation Tool")
+
+root.geometry("550x300")
+
+title = tk.Label(
+    root,
+    text="Daily Reconciliation Tool",
+    font=("Arial", 16, "bold")
+)
+
+title.pack(pady=30)
+
+subtitle = tk.Label(
+    root,
+    text="Select folder containing IC_EOD and PHOENIX CSV files",
+    font=("Arial", 10)
+)
+
+subtitle.pack()
+
+run_button = tk.Button(
+    root,
+    text="Select Folder and Run",
+    command=run_reconciliation,
+    width=35,
+    height=2
+)
+
+run_button.pack(pady=40)
+
+footer = tk.Label(
+    root,
+    text="Production Reconciliation Engine",
+    font=("Arial", 8)
+)
+
+footer.pack(side="bottom", pady=10)
+
+root.mainloop()
