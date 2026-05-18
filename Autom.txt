@@ -369,3 +369,38 @@ UPI
 UPI2
 
 
+IC_EOD_Extract	PHOENIX	PHOENIX
+Original ID	ORIGINAL_ID	
+Agreement Date		
+Maturity Date	MATURITY_DATE_LEG_1	MATURITY_DATE_LEG_2
+Status	STATUS	
+Quantity		
+Leg1 Notional		
+Leg1 currency		
+Leg1 price		
+Leg2 Notional		
+Leg2 currency		
+Leg2 price		
+Underlying		
+Counterparty	CPTY_GLCS	
+Direction		
+Product	PRODUCT	
+UTI	UTI_1	UTI_2
+Prior UTI	PRIOR_UTI_1	PRIOR_UTI_2
+		
+		
+		
+		
+		
+		
+_SWAPONE_SWAPSWAPONEEQSWP		
+		
+		
+ACTION_IND		
+BRANCH		
+TRADE_DATE		
+NOMINAL1_LEG1		
+NOMINAL1_LEG2		
+RATE_LEG_1		
+RATE_LEG_2		
+
