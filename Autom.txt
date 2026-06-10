@@ -904,3 +904,423 @@ footer = tk.Label(
 footer.pack(side="bottom", pady=10)
 
 root.mainloop()
+
+
+
+
+aqui
+
+import pandas as pd
+import tkinter as tk
+from tkinter import filedialog, messagebox
+from datetime import datetime
+import os
+
+PHX_SUFFIX = "_SWAPONE_SWAPSWAPONEEQSWP"
+
+# =====================================================
+# HELPERS
+# =====================================================
+
+def read_csv_auto(file_path):
+    """
+    Detecta automáticamente el separador.
+    """
+
+    with open(file_path, "r", encoding="utf-8-sig") as f:
+        first_line = f.readline()
+
+    sep = ";" if first_line.count(";") > first_line.count(",") else ","
+
+    return pd.read_csv(
+        file_path,
+        sep=sep,
+        encoding="utf-8-sig",
+        dtype=str
+    )
+
+
+def normalize_columns(df):
+
+    df.columns = (
+        df.columns
+        .str.replace("\ufeff", "", regex=False)
+        .str.strip()
+        .str.upper()
+        .str.replace(" ", "_", regex=False)
+        .str.replace("-", "_", regex=False)
+    )
+
+    return df
+
+
+def clean_string(x):
+
+    if pd.isna(x):
+        return ""
+
+    return (
+        str(x)
+        .upper()
+        .strip()
+        .replace(" ", "")
+    )
+
+
+def clean_ic_date(x):
+
+    if pd.isna(x):
+        return None
+
+    return pd.to_datetime(
+        x,
+        dayfirst=True,
+        errors="coerce"
+    ).date()
+
+
+def clean_phx_date(x):
+
+    if pd.isna(x):
+        return None
+
+    return pd.to_datetime(
+        x,
+        errors="coerce"
+    ).date()
+
+
+# =====================================================
+# NORMALIZATION
+# =====================================================
+
+def normalize_ic(df):
+
+    df = normalize_columns(df)
+
+    required = [
+        "ORIGINAL_ID",
+        "MATURITY_DATE",
+        "STATUS",
+        "COUNTERPARTY",
+        "PRODUCT",
+        "UTI"
+    ]
+
+    validate_columns(df, required, "IC_EOD")
+
+    df["ORIGINAL_ID"] = df["ORIGINAL_ID"].astype(str).str.strip()
+
+    df["MATURITY_DATE"] = df["MATURITY_DATE"].apply(clean_ic_date)
+
+    df["STATUS"] = df["STATUS"].apply(clean_string)
+
+    df["COUNTERPARTY"] = df["COUNTERPARTY"].apply(clean_string)
+
+    df["PRODUCT"] = df["PRODUCT"].apply(clean_string)
+
+    df["UTI"] = df["UTI"].apply(clean_string)
+
+    return df
+
+
+def normalize_phx(df):
+
+    df = normalize_columns(df)
+
+    required = [
+        "ORIGINAL_ID",
+        "MATURITY_DATE_LEG_1",
+        "STATUS",
+        "CPTY_GLCS",
+        "PRODUCT",
+        "UTI_1"
+    ]
+
+    validate_columns(df, required, "PHOENIX")
+
+    df["ORIGINAL_ID"] = (
+        df["ORIGINAL_ID"]
+        .astype(str)
+        .str.replace(PHX_SUFFIX, "", regex=False)
+        .str.strip()
+    )
+
+    df["MATURITY_DATE_LEG_1"] = (
+        df["MATURITY_DATE_LEG_1"]
+        .apply(clean_phx_date)
+    )
+
+    df["STATUS"] = df["STATUS"].apply(clean_string)
+
+    df["CPTY_GLCS"] = df["CPTY_GLCS"].apply(clean_string)
+
+    df["PRODUCT"] = df["PRODUCT"].apply(clean_string)
+
+    df["UTI_1"] = df["UTI_1"].apply(clean_string)
+
+    return df
+
+
+# =====================================================
+# VALIDATION
+# =====================================================
+
+def validate_columns(df, required_cols, dataset_name):
+
+    missing = [
+        col
+        for col in required_cols
+        if col not in df.columns
+    ]
+
+    if missing:
+
+        raise Exception(
+            f"""
+{dataset_name}
+
+Missing columns:
+{missing}
+
+Columns found:
+
+{list(df.columns)}
+"""
+        )
+
+
+# =====================================================
+# RECONCILIATION
+# =====================================================
+
+def reconcile(df_ic, df_phx):
+
+    merged = pd.merge(
+        df_ic,
+        df_phx,
+        on="ORIGINAL_ID",
+        how="outer",
+        indicator=True,
+        suffixes=("_IC", "_PHX")
+    )
+
+    breaks = []
+    missing_phx = []
+    extra_phx = []
+
+    matched = 0
+
+    for _, row in merged.iterrows():
+
+        if row["_merge"] == "left_only":
+
+            missing_phx.append({
+                "ORIGINAL_ID": row["ORIGINAL_ID"]
+            })
+
+            continue
+
+        if row["_merge"] == "right_only":
+
+            extra_phx.append({
+                "ORIGINAL_ID": row["ORIGINAL_ID"]
+            })
+
+            continue
+
+        current_breaks = []
+
+        fields = [
+
+            (
+                "MATURITY_DATE",
+                row["MATURITY_DATE"],
+                row["MATURITY_DATE_LEG_1"]
+            ),
+
+            (
+                "STATUS",
+                row["STATUS_IC"],
+                row["STATUS_PHX"]
+            ),
+
+            (
+                "COUNTERPARTY",
+                row["COUNTERPARTY"],
+                row["CPTY_GLCS"]
+            ),
+
+            (
+                "PRODUCT",
+                row["PRODUCT_IC"],
+                row["PRODUCT_PHX"]
+            ),
+
+            (
+                "UTI",
+                row["UTI"],
+                row["UTI_1"]
+            )
+
+        ]
+
+        for field_name, ic_val, phx_val in fields:
+
+            if ic_val != phx_val:
+
+                current_breaks.append({
+                    "ORIGINAL_ID": row["ORIGINAL_ID"],
+                    "FIELD": field_name,
+                    "IC_VALUE": ic_val,
+                    "PHX_VALUE": phx_val
+                })
+
+        if current_breaks:
+            breaks.extend(current_breaks)
+        else:
+            matched += 1
+
+    summary = pd.DataFrame([{
+        "MATCHED": matched,
+        "BREAKS": len(breaks),
+        "MISSING_IN_PHX": len(missing_phx),
+        "EXTRA_IN_PHX": len(extra_phx)
+    }])
+
+    return (
+        summary,
+        pd.DataFrame(breaks),
+        pd.DataFrame(missing_phx),
+        pd.DataFrame(extra_phx)
+    )
+
+
+# =====================================================
+# MAIN
+# =====================================================
+
+def run_reconciliation():
+
+    try:
+
+        folder = filedialog.askdirectory(
+            title="Select Folder"
+        )
+
+        if not folder:
+            return
+
+        files = os.listdir(folder)
+
+        ic_file = None
+        phx_file = None
+
+        for f in files:
+
+            upper = f.upper()
+
+            if "IC_EOD" in upper and f.endswith(".csv"):
+                ic_file = os.path.join(folder, f)
+
+            if "PHOENIX" in upper and f.endswith(".csv"):
+                phx_file = os.path.join(folder, f)
+
+        if not ic_file:
+            raise Exception("IC_EOD file not found")
+
+        if not phx_file:
+            raise Exception("PHOENIX file not found")
+
+        df_ic = read_csv_auto(ic_file)
+        df_phx = read_csv_auto(phx_file)
+
+        df_ic = normalize_ic(df_ic)
+        df_phx = normalize_phx(df_phx)
+
+        summary, breaks, missing, extra = reconcile(
+            df_ic,
+            df_phx
+        )
+
+        timestamp = datetime.now().strftime(
+            "%Y%m%d_%H%M%S"
+        )
+
+        output = os.path.join(
+            folder,
+            f"RECONCILIATION_{timestamp}.xlsx"
+        )
+
+        with pd.ExcelWriter(
+            output,
+            engine="openpyxl"
+        ) as writer:
+
+            summary.to_excel(
+                writer,
+                sheet_name="SUMMARY",
+                index=False
+            )
+
+            breaks.to_excel(
+                writer,
+                sheet_name="BREAKS_DETAIL",
+                index=False
+            )
+
+            missing.to_excel(
+                writer,
+                sheet_name="MISSING_IN_PHX",
+                index=False
+            )
+
+            extra.to_excel(
+                writer,
+                sheet_name="EXTRA_IN_PHX",
+                index=False
+            )
+
+        messagebox.showinfo(
+            "Success",
+            f"Output generated:\n\n{output}"
+        )
+
+    except Exception as e:
+
+        messagebox.showerror(
+            "Execution Error",
+            str(e)
+        )
+
+
+# =====================================================
+# UI
+# =====================================================
+
+root = tk.Tk()
+
+root.title("IC vs PHOENIX Reconciliation Tool")
+
+root.geometry("500x250")
+
+title = tk.Label(
+    root,
+    text="Daily Reconciliation Tool",
+    font=("Arial", 16, "bold")
+)
+
+title.pack(pady=20)
+
+button = tk.Button(
+    root,
+    text="Select Folder and Run",
+    command=run_reconciliation,
+    width=30,
+    height=2
+)
+
+button.pack(pady=20)
+
+root.mainloop()
+
